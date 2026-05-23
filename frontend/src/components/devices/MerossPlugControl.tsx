@@ -129,7 +129,9 @@ export function MerossPlugControl({ deviceId }: MerossPlugControlProps) {
             <div className="flex items-center gap-3">
               <div
                 className={`flex h-12 w-12 items-center justify-center rounded-xl ${
-                  isOn ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-400"
+                  isOn
+                    ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300"
+                    : "bg-muted text-muted-foreground"
                 }`}
               >
                 {isOn ? <PlugZap className="h-6 w-6" /> : <Plug className="h-6 w-6" />}
@@ -318,13 +320,17 @@ export function MerossPlugControl({ deviceId }: MerossPlugControlProps) {
 
       {/* Offline warning */}
       {!isOnline && (
-        <Card className="border-yellow-200 bg-yellow-50">
+        <Card className="border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/40">
           <CardContent className="py-4">
             <div className="flex items-center gap-3">
-              <WifiOff className="h-5 w-5 text-yellow-600" />
+              <WifiOff className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
               <div>
-                <p className="font-medium text-yellow-800">{t("meross.notConnected")}</p>
-                <p className="text-sm text-yellow-700">{t("meross.notConnectedDescription")}</p>
+                <p className="font-medium text-yellow-800 dark:text-yellow-200">
+                  {t("meross.notConnected")}
+                </p>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                  {t("meross.notConnectedDescription")}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -377,7 +383,9 @@ export function MerossPlugCard({ plug }: MerossPlugCardProps) {
           <div className="flex items-center gap-3">
             <div
               className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                isOn ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-400"
+                isOn
+                  ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300"
+                  : "bg-muted text-muted-foreground"
               }`}
             >
               {isOn ? <PlugZap className="h-5 w-5" /> : <Plug className="h-5 w-5" />}

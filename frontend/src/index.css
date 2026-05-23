@@ -111,7 +111,10 @@
 }
 
 .dark body {
-  background:
+  /* Override only the image so background-attachment/repeat/size from the base
+     `body` rule are preserved (the shorthand would reset them and break the
+     fixed full-viewport fill). */
+  background-image:
     radial-gradient(circle at top left, hsl(199 89% 48% / 0.18), transparent 26%),
     radial-gradient(circle at 85% 15%, hsl(42 100% 60% / 0.12), transparent 22%),
     linear-gradient(180deg, hsl(222.2 84% 4.9%), hsl(217.2 40% 8%));

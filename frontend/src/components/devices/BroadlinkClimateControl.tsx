@@ -158,9 +158,10 @@ export function BroadlinkClimateControl({
 
       <CardContent className="space-y-4 px-0 pb-0">
         {remote ? (
-          <div className="rounded-2xl bg-emerald-50/90 px-4 py-3 text-sm text-emerald-800">
-            <div className="font-medium">{t("climate.remoteConnected")}</div>
-            <div className="mt-1 font-mono text-xs text-emerald-700">{remote.host}</div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-sm">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+            <span className="font-medium text-foreground">{t("climate.remoteConnected")}</span>
+            <span className="font-mono text-xs text-muted-foreground">{remote.host}</span>
           </div>
         ) : discoveryTimedOut ? (
           <div className="rounded-2xl bg-muted px-4 py-5 text-center text-sm text-muted-foreground">
@@ -171,7 +172,7 @@ export function BroadlinkClimateControl({
         ) : (
           <div className="rounded-2xl bg-muted px-4 py-5">
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-100 text-sky-600 dark:bg-sky-950/50 dark:text-sky-300">
                 <Loader2 className="h-4 w-4 animate-spin" />
               </div>
               <div>

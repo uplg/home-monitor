@@ -28,10 +28,10 @@ const colorConfig = {
     icon: "💙",
   },
   WHITE: {
-    bg: "bg-gray-100",
-    text: "text-gray-600",
-    border: "border-gray-400",
-    light: "bg-gray-50",
+    bg: "bg-gray-200 dark:bg-gray-600",
+    text: "text-gray-600 dark:text-gray-300",
+    border: "border-gray-400 dark:border-gray-600",
+    light: "bg-gray-50 dark:bg-gray-800",
     icon: "🤍",
   },
   RED: {
@@ -78,7 +78,7 @@ function PredictionCard({ prediction, index }: { prediction: TempoPrediction; in
             <p className="text-lg font-semibold">{dateLabel}</p>
           </div>
           <Badge
-            className={`${config.bg} ${prediction.predicted_color === "WHITE" ? "text-gray-700" : "text-white"} text-lg px-3 py-1`}
+            className={`${config.bg} ${prediction.predicted_color === "WHITE" ? "text-gray-700 dark:text-gray-100" : "text-white"} text-lg px-3 py-1`}
           >
             {config.icon} {t(`tempo.colors.${prediction.predicted_color.toLowerCase()}`)}
           </Badge>
@@ -97,20 +97,20 @@ function PredictionCard({ prediction, index }: { prediction: TempoPrediction; in
 
         {/* Probabilities */}
         <div className="grid grid-cols-3 gap-2 text-center text-xs">
-          <div className="p-2 rounded bg-blue-50">
-            <p className="text-blue-600 font-medium">
+          <div className="p-2 rounded bg-blue-50 dark:bg-blue-950/40">
+            <p className="text-blue-600 dark:text-blue-300 font-medium">
               {Math.round(prediction.probabilities.BLUE * 100)}%
             </p>
             <p className="text-muted-foreground">{t("tempo.colors.blue")}</p>
           </div>
-          <div className="p-2 rounded bg-gray-100">
-            <p className="text-gray-600 font-medium">
+          <div className="p-2 rounded bg-gray-100 dark:bg-gray-800">
+            <p className="text-gray-600 dark:text-gray-300 font-medium">
               {Math.round(prediction.probabilities.WHITE * 100)}%
             </p>
             <p className="text-muted-foreground">{t("tempo.colors.white")}</p>
           </div>
-          <div className="p-2 rounded bg-red-50">
-            <p className="text-red-600 font-medium">
+          <div className="p-2 rounded bg-red-50 dark:bg-red-950/40">
+            <p className="text-red-600 dark:text-red-300 font-medium">
               {Math.round(prediction.probabilities.RED * 100)}%
             </p>
             <p className="text-muted-foreground">{t("tempo.colors.red")}</p>
@@ -186,7 +186,10 @@ function StateCard({
               {redUsed} / {state.stock_red_total} {t("tempo.prediction.used")}
             </span>
           </div>
-          <Progress value={100 - redPercent} className="h-3 bg-red-100 [&>div]:bg-red-500" />
+          <Progress
+            value={100 - redPercent}
+            className="h-3 bg-red-100 dark:bg-red-950/50 [&>div]:bg-red-500"
+          />
           <p className="text-xs text-muted-foreground">
             {state.stock_red_remaining} {t("tempo.prediction.remaining")}
           </p>
@@ -196,14 +199,17 @@ function StateCard({
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-gray-400" />
+              <span className="w-3 h-3 rounded-full bg-gray-400 dark:bg-gray-500" />
               {t("tempo.prediction.whiteDays")}
             </span>
             <span className="font-medium">
               {whiteUsed} / {state.stock_white_total} {t("tempo.prediction.used")}
             </span>
           </div>
-          <Progress value={100 - whitePercent} className="h-3 bg-gray-200 [&>div]:bg-gray-500" />
+          <Progress
+            value={100 - whitePercent}
+            className="h-3 bg-gray-200 dark:bg-gray-700 [&>div]:bg-gray-500"
+          />
           <p className="text-xs text-muted-foreground">
             {state.stock_white_remaining} {t("tempo.prediction.remaining")}
           </p>

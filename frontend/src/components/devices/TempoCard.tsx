@@ -14,19 +14,19 @@ const colorStyles: Record<string, { bg: string; text: string; border: string; li
     bg: "bg-blue-500",
     text: "text-white",
     border: "border-blue-600",
-    light: "bg-blue-50 text-blue-700",
+    light: "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300",
   },
   WHITE: {
-    bg: "bg-gray-100",
-    text: "text-gray-800",
-    border: "border-gray-300",
-    light: "bg-gray-50 text-gray-700",
+    bg: "bg-gray-200 dark:bg-gray-600",
+    text: "text-gray-800 dark:text-gray-100",
+    border: "border-gray-300 dark:border-gray-600",
+    light: "bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300",
   },
   RED: {
     bg: "bg-red-500",
     text: "text-white",
     border: "border-red-600",
-    light: "bg-red-50 text-red-700",
+    light: "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300",
   },
 };
 
@@ -63,7 +63,9 @@ function ColorBadge({
       >
         {isPrediction ? <TrendingUp className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
       </div>
-      <span className={`text-xs font-medium ${color === "WHITE" ? "text-gray-700" : ""}`}>
+      <span
+        className={`text-xs font-medium ${color === "WHITE" ? "text-gray-700 dark:text-gray-300" : ""}`}
+      >
         {t(`tempo.colors.${color.toLowerCase()}`)}
         {isPrediction && <span className="text-muted-foreground"> *</span>}
       </span>
@@ -259,7 +261,7 @@ export function TempoCard() {
         {/* Current tariff section */}
         {currentTarif && displayTodayColor && (
           <div
-            className={`rounded-2xl p-4 ${colorStyles[displayTodayColor]?.light || "bg-gray-50"}`}
+            className={`rounded-2xl p-4 ${colorStyles[displayTodayColor]?.light || "bg-gray-50 dark:bg-gray-800"}`}
           >
             <div className="flex items-center justify-center gap-2 mb-2">
               <Euro className="h-4 w-4" />
@@ -291,20 +293,38 @@ export function TempoCard() {
                 {t("tempo.allTarifs")}
               </summary>
               <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-                <div className="rounded bg-blue-50 p-2">
-                  <div className="font-medium text-blue-700">{t("tempo.colors.blue")}</div>
-                  <div className="text-blue-600">HC: {formatPrice(data.tarifs.blue.hc)}</div>
-                  <div className="text-blue-600">HP: {formatPrice(data.tarifs.blue.hp)}</div>
+                <div className="rounded bg-blue-50 dark:bg-blue-950/40 p-2">
+                  <div className="font-medium text-blue-700 dark:text-blue-300">
+                    {t("tempo.colors.blue")}
+                  </div>
+                  <div className="text-blue-600 dark:text-blue-400">
+                    HC: {formatPrice(data.tarifs.blue.hc)}
+                  </div>
+                  <div className="text-blue-600 dark:text-blue-400">
+                    HP: {formatPrice(data.tarifs.blue.hp)}
+                  </div>
                 </div>
-                <div className="rounded bg-gray-100 p-2">
-                  <div className="font-medium text-gray-700">{t("tempo.colors.white")}</div>
-                  <div className="text-gray-600">HC: {formatPrice(data.tarifs.white.hc)}</div>
-                  <div className="text-gray-600">HP: {formatPrice(data.tarifs.white.hp)}</div>
+                <div className="rounded bg-gray-100 dark:bg-gray-800 p-2">
+                  <div className="font-medium text-gray-700 dark:text-gray-200">
+                    {t("tempo.colors.white")}
+                  </div>
+                  <div className="text-gray-600 dark:text-gray-400">
+                    HC: {formatPrice(data.tarifs.white.hc)}
+                  </div>
+                  <div className="text-gray-600 dark:text-gray-400">
+                    HP: {formatPrice(data.tarifs.white.hp)}
+                  </div>
                 </div>
-                <div className="rounded bg-red-50 p-2">
-                  <div className="font-medium text-red-700">{t("tempo.colors.red")}</div>
-                  <div className="text-red-600">HC: {formatPrice(data.tarifs.red.hc)}</div>
-                  <div className="text-red-600">HP: {formatPrice(data.tarifs.red.hp)}</div>
+                <div className="rounded bg-red-50 dark:bg-red-950/40 p-2">
+                  <div className="font-medium text-red-700 dark:text-red-300">
+                    {t("tempo.colors.red")}
+                  </div>
+                  <div className="text-red-600 dark:text-red-400">
+                    HC: {formatPrice(data.tarifs.red.hc)}
+                  </div>
+                  <div className="text-red-600 dark:text-red-400">
+                    HP: {formatPrice(data.tarifs.red.hp)}
+                  </div>
                 </div>
               </div>
             </details>

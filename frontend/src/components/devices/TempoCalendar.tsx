@@ -26,26 +26,26 @@ import { useState, useMemo } from "react";
 const colorConfig = {
   BLUE: {
     bg: "bg-blue-500",
-    bgLight: "bg-blue-100",
-    text: "text-blue-700",
-    border: "border-blue-300",
-    hover: "hover:bg-blue-200",
+    bgLight: "bg-blue-100 dark:bg-blue-950/50",
+    text: "text-blue-700 dark:text-blue-300",
+    border: "border-blue-300 dark:border-blue-700",
+    hover: "hover:bg-blue-200 dark:hover:bg-blue-900",
     ring: "ring-blue-400",
   },
   WHITE: {
-    bg: "bg-gray-300",
-    bgLight: "bg-gray-100",
-    text: "text-gray-700",
-    border: "border-gray-300",
-    hover: "hover:bg-gray-200",
+    bg: "bg-gray-300 dark:bg-gray-500",
+    bgLight: "bg-gray-100 dark:bg-gray-800",
+    text: "text-gray-700 dark:text-gray-300",
+    border: "border-gray-300 dark:border-gray-600",
+    hover: "hover:bg-gray-200 dark:hover:bg-gray-700",
     ring: "ring-gray-400",
   },
   RED: {
     bg: "bg-red-500",
-    bgLight: "bg-red-100",
-    text: "text-red-700",
-    border: "border-red-300",
-    hover: "hover:bg-red-200",
+    bgLight: "bg-red-100 dark:bg-red-950/50",
+    text: "text-red-700 dark:text-red-300",
+    border: "border-red-300 dark:border-red-700",
+    hover: "hover:bg-red-200 dark:hover:bg-red-900",
     ring: "ring-red-400",
   },
 };
@@ -141,7 +141,7 @@ function CalendarDay({ day, isToday }: CalendarDayProps) {
             </div>
             <div className="flex items-center gap-2">
               <Badge
-                className={`${config.bg} ${day.color === "WHITE" ? "text-gray-800" : "text-white"}`}
+                className={`${config.bg} ${day.color === "WHITE" ? "text-gray-800 dark:text-gray-100" : "text-white"}`}
               >
                 {t(`tempo.colors.${day.color.toLowerCase()}`)}
               </Badge>
@@ -156,9 +156,15 @@ function CalendarDay({ day, isToday }: CalendarDayProps) {
             </div>
             {day.probabilities && (
               <div className="grid grid-cols-3 gap-1 text-xs pt-1">
-                <div className="text-blue-600">B: {Math.round(day.probabilities.BLUE * 100)}%</div>
-                <div className="text-gray-600">W: {Math.round(day.probabilities.WHITE * 100)}%</div>
-                <div className="text-red-600">R: {Math.round(day.probabilities.RED * 100)}%</div>
+                <div className="text-blue-600 dark:text-blue-300">
+                  B: {Math.round(day.probabilities.BLUE * 100)}%
+                </div>
+                <div className="text-gray-600 dark:text-gray-300">
+                  W: {Math.round(day.probabilities.WHITE * 100)}%
+                </div>
+                <div className="text-red-600 dark:text-red-300">
+                  R: {Math.round(day.probabilities.RED * 100)}%
+                </div>
               </div>
             )}
             {day.constraints && !day.constraints.is_in_red_period && (
@@ -468,7 +474,7 @@ export function TempoCalendar() {
             <span>{t("tempo.colors.blue")}</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-gray-300" />
+            <div className="w-4 h-4 rounded bg-gray-300 dark:bg-gray-500" />
             <span>{t("tempo.colors.white")}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -476,7 +482,7 @@ export function TempoCalendar() {
             <span>{t("tempo.colors.red")}</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-blue-100 border border-dashed border-blue-300" />
+            <div className="w-4 h-4 rounded bg-blue-100 dark:bg-blue-950/50 border border-dashed border-blue-300 dark:border-blue-700" />
             <span className="text-muted-foreground">{t("tempo.calendar.prediction")}</span>
           </div>
         </div>
@@ -511,7 +517,7 @@ export function TempoCalendar() {
               <div className="text-sm text-muted-foreground">{t("tempo.colors.blue")}</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-600">
+              <div className="text-2xl font-bold text-gray-600 dark:text-gray-300">
                 {statistics.color_counts.WHITE}
                 <span className="text-sm font-normal">/{stock.white_total}</span>
               </div>
