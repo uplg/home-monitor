@@ -130,7 +130,8 @@ export function LitterBoxControl({ deviceId }: LitterBoxControlProps) {
 
   // Derive form values: use local override if user touched the control, otherwise server data, otherwise fallback.
   const cleanDelay = cleanDelayOverride ?? [parsedStatus?.clean_delay?.seconds ?? 120];
-  const sleepStart = sleepStartOverride ?? parsedStatus?.sleep_mode?.start_time_formatted ?? "23:00";
+  const sleepStart =
+    sleepStartOverride ?? parsedStatus?.sleep_mode?.start_time_formatted ?? "23:00";
   const sleepEnd = sleepEndOverride ?? parsedStatus?.sleep_mode?.end_time_formatted ?? "07:00";
 
   if (isLoading) {

@@ -47,7 +47,7 @@ function xyToRgb(x: number, y: number, brightness = 1.0): [number, number, numbe
   // Wide-gamut to sRGB matrix
   let r = X * 1.656492 - Y * 0.354851 - Z * 0.255038;
   let g = -X * 0.707196 + Y * 1.655397 + Z * 0.036152;
-  let b = X * 0.051713 - Y * 0.121364 + Z * 1.011530;
+  let b = X * 0.051713 - Y * 0.121364 + Z * 1.01153;
   // Clamp
   const maxVal = Math.max(r, g, b, 1);
   r = Math.max(0, r / maxVal);
@@ -72,9 +72,9 @@ function rgbToXy(r: number, g: number, b: number): [number, number] {
   // sRGB to XYZ
   const X = rr * 0.664511 + gg * 0.154324 + bb * 0.162028;
   const Y = rr * 0.283881 + gg * 0.668433 + bb * 0.047685;
-  const Z = rr * 0.000088 + gg * 0.072310 + bb * 0.986039;
+  const Z = rr * 0.000088 + gg * 0.07231 + bb * 0.986039;
   const sum = X + Y + Z;
-  if (sum === 0) return [0.3127, 0.3290]; // D65 white
+  if (sum === 0) return [0.3127, 0.329]; // D65 white
   return [X / sum, Y / sum];
 }
 
@@ -82,13 +82,28 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
   const c = v * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = v - c;
-  let r = 0, g = 0, b = 0;
-  if (h < 60) { r = c; g = x; }
-  else if (h < 120) { r = x; g = c; }
-  else if (h < 180) { g = c; b = x; }
-  else if (h < 240) { g = x; b = c; }
-  else if (h < 300) { r = x; b = c; }
-  else { r = c; b = x; }
+  let r = 0,
+    g = 0,
+    b = 0;
+  if (h < 60) {
+    r = c;
+    g = x;
+  } else if (h < 120) {
+    r = x;
+    g = c;
+  } else if (h < 180) {
+    g = c;
+    b = x;
+  } else if (h < 240) {
+    g = x;
+    b = c;
+  } else if (h < 300) {
+    r = x;
+    b = c;
+  } else {
+    r = c;
+    b = x;
+  }
   return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }
 
@@ -136,8 +151,11 @@ function xyToWheelPos(
   const y = colorY;
   const [r, g, b] = xyToRgb(x, y);
   // RGB to HSV
-  const rn = r / 255, gn = g / 255, bn = b / 255;
-  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+  const rn = r / 255,
+    gn = g / 255,
+    bn = b / 255;
+  const max = Math.max(rn, gn, bn),
+    min = Math.min(rn, gn, bn);
   const delta = max - min;
   let hue = 0;
   if (delta > 0) {
@@ -156,11 +174,7 @@ function xyToWheelPos(
 }
 
 /** Convert a click position on the color wheel canvas to CIE XY (float 0.0–1.0) */
-function wheelPosToXy(
-  px: number,
-  py: number,
-  canvasSize: number,
-): { x: number; y: number } | null {
+function wheelPosToXy(px: number, py: number, canvasSize: number): { x: number; y: number } | null {
   const cx = canvasSize / 2;
   const cy = canvasSize / 2;
   const radius = canvasSize / 2;
@@ -226,7 +240,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
 
   const lamp = data?.lamp;
   const [localBrightness, setLocalBrightness] = useState<number[]>([lamp?.state.brightness ?? 0]);
-  const [localTemperature, setLocalTemperature] = useState<number[]>([lamp?.state.temperature ?? 50]);
+  const [localTemperature, setLocalTemperature] = useState<number[]>([
+    lamp?.state.temperature ?? 50,
+  ]);
   const targetBrightnessRef = useRef<number | null>(null);
   const targetTemperatureRef = useRef<number | null>(null);
   const powerCooldownRef = useRef<number>(0);
@@ -444,10 +460,16 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
             <div className="flex items-center gap-3">
               <div
                 className={`flex h-12 w-12 items-center justify-center rounded-xl ${
-                  lamp.state.isOn ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-400"
+                  lamp.state.isOn
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                    : "bg-muted text-muted-foreground"
                 }`}
               >
-                {lamp.state.isOn ? <Lightbulb className="h-6 w-6" /> : <LightbulbOff className="h-6 w-6" />}
+                {lamp.state.isOn ? (
+                  <Lightbulb className="h-6 w-6" />
+                ) : (
+                  <LightbulbOff className="h-6 w-6" />
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -465,7 +487,10 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
                           {t("zigbeeLamps.renameDescription", { name: lamp.name })}
                         </DialogDescription>
                       </DialogHeader>
-                      <Input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} />
+                      <Input
+                        value={renameValue}
+                        onChange={(event) => setRenameValue(event.target.value)}
+                      />
                       <DialogFooter>
                         <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
                           {t("common.cancel")}
@@ -474,7 +499,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
                           onClick={() => renameMutation.mutate(renameValue)}
                           disabled={renameMutation.isPending || renameValue.trim().length === 0}
                         >
-                          {renameMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          {renameMutation.isPending ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : null}
                           {t("zigbeeLamps.renameConfirm")}
                         </Button>
                       </DialogFooter>
@@ -511,14 +538,18 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
             )}
             <Badge variant="outline">
               <Radio className="mr-1 h-3 w-3" />
-              {lamp.interviewCompleted ? t("zigbeeLamps.interviewComplete") : t("zigbeeLamps.interviewPending")}
+              {lamp.interviewCompleted
+                ? t("zigbeeLamps.interviewComplete")
+                : t("zigbeeLamps.interviewPending")}
             </Badge>
           </div>
 
           <div className="space-y-3">
             <div>
               <Label>{t("zigbeeLamps.brightness")}</Label>
-              <p className="text-sm text-muted-foreground">{t("zigbeeLamps.brightnessDescription")}</p>
+              <p className="text-sm text-muted-foreground">
+                {t("zigbeeLamps.brightnessDescription")}
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <Sun className="h-4 w-4 text-muted-foreground" />
@@ -536,7 +567,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
                 step={1}
                 disabled={!isConnected || !lamp.state.isOn || brightnessMutation.isPending}
               />
-              <span className="w-10 text-right text-sm text-muted-foreground">{localBrightness[0]}%</span>
+              <span className="w-10 text-right text-sm text-muted-foreground">
+                {localBrightness[0]}%
+              </span>
             </div>
           </div>
 
@@ -565,7 +598,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
 
               <TabsContent value="temperature">
                 <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">{t("zigbeeLamps.temperatureDescription")}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t("zigbeeLamps.temperatureDescription")}
+                  </p>
                   <div className="flex items-center gap-3">
                     <Thermometer className="h-4 w-4 text-muted-foreground" />
                     <Slider
@@ -582,7 +617,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
                       step={1}
                       disabled={!isConnected || !lamp.state.isOn || temperatureMutation.isPending}
                     />
-                    <span className="w-10 text-right text-sm text-muted-foreground">{localTemperature[0]}%</span>
+                    <span className="w-10 text-right text-sm text-muted-foreground">
+                      {localTemperature[0]}%
+                    </span>
                   </div>
                 </div>
               </TabsContent>
@@ -590,7 +627,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
               <TabsContent value="color">
                 <div className="space-y-4">
                   <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">{t("zigbeeLamps.colorDescription")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t("zigbeeLamps.colorDescription")}
+                    </p>
                     <div className="flex items-center gap-4">
                       <Palette className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <div className="relative">
@@ -601,25 +640,35 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
                           className="h-48 w-48 cursor-pointer rounded-full"
                           onClick={handleColorWheelClick}
                         />
-                        {lamp.state.colorX !== null && lamp.state.colorY !== null && (() => {
-                          const pos = xyToWheelPos(lamp.state.colorX, lamp.state.colorY, COLOR_WHEEL_SIZE);
-                          const displayScale = 192 / COLOR_WHEEL_SIZE;
-                          return (
-                            <div
-                              className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md"
-                              style={{ left: pos.px * displayScale, top: pos.py * displayScale }}
-                            />
-                          );
-                        })()}
+                        {lamp.state.colorX !== null &&
+                          lamp.state.colorY !== null &&
+                          (() => {
+                            const pos = xyToWheelPos(
+                              lamp.state.colorX,
+                              lamp.state.colorY,
+                              COLOR_WHEEL_SIZE,
+                            );
+                            const displayScale = 192 / COLOR_WHEEL_SIZE;
+                            return (
+                              <div
+                                className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md"
+                                style={{ left: pos.px * displayScale, top: pos.py * displayScale }}
+                              />
+                            );
+                          })()}
                       </div>
-                      {colorMutation.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                      {colorMutation.isPending && (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      )}
                     </div>
                   </div>
 
                   <div className="space-y-3">
                     <div>
                       <Label>{t("zigbeeLamps.effects")}</Label>
-                      <p className="text-sm text-muted-foreground">{t("zigbeeLamps.effectsDescription")}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {t("zigbeeLamps.effectsDescription")}
+                      </p>
                     </div>
                     <div className="flex items-start gap-3">
                       <Sparkles className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -654,7 +703,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
             <div className="space-y-3">
               <div>
                 <Label>{t("zigbeeLamps.temperature")}</Label>
-                <p className="text-sm text-muted-foreground">{t("zigbeeLamps.temperatureDescription")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t("zigbeeLamps.temperatureDescription")}
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <Thermometer className="h-4 w-4 text-muted-foreground" />
@@ -672,7 +723,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
                   step={1}
                   disabled={!isConnected || !lamp.state.isOn || temperatureMutation.isPending}
                 />
-                <span className="w-10 text-right text-sm text-muted-foreground">{localTemperature[0]}%</span>
+                <span className="w-10 text-right text-sm text-muted-foreground">
+                  {localTemperature[0]}%
+                </span>
               </div>
             </div>
           ) : lamp.supportsColor ? (
@@ -681,7 +734,9 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
               <div className="space-y-3">
                 <div>
                   <Label>{t("zigbeeLamps.color")}</Label>
-                  <p className="text-sm text-muted-foreground">{t("zigbeeLamps.colorDescription")}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t("zigbeeLamps.colorDescription")}
+                  </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <Palette className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -693,24 +748,34 @@ export function ZigbeeLampControl({ lampId }: ZigbeeLampControlProps) {
                       className="h-48 w-48 cursor-pointer rounded-full"
                       onClick={handleColorWheelClick}
                     />
-                    {lamp.state.colorX !== null && lamp.state.colorY !== null && (() => {
-                      const pos = xyToWheelPos(lamp.state.colorX, lamp.state.colorY, COLOR_WHEEL_SIZE);
-                      const displayScale = 192 / COLOR_WHEEL_SIZE;
-                      return (
-                        <div
-                          className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md"
-                          style={{ left: pos.px * displayScale, top: pos.py * displayScale }}
-                        />
-                      );
-                    })()}
+                    {lamp.state.colorX !== null &&
+                      lamp.state.colorY !== null &&
+                      (() => {
+                        const pos = xyToWheelPos(
+                          lamp.state.colorX,
+                          lamp.state.colorY,
+                          COLOR_WHEEL_SIZE,
+                        );
+                        const displayScale = 192 / COLOR_WHEEL_SIZE;
+                        return (
+                          <div
+                            className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md"
+                            style={{ left: pos.px * displayScale, top: pos.py * displayScale }}
+                          />
+                        );
+                      })()}
                   </div>
-                  {colorMutation.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                  {colorMutation.isPending && (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
                 </div>
               </div>
               <div className="space-y-3">
                 <div>
                   <Label>{t("zigbeeLamps.effects")}</Label>
-                  <p className="text-sm text-muted-foreground">{t("zigbeeLamps.effectsDescription")}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t("zigbeeLamps.effectsDescription")}
+                  </p>
                 </div>
                 <div className="flex items-start gap-3">
                   <Sparkles className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -871,16 +936,26 @@ export function ZigbeeLampCard({ lamp }: ZigbeeLampCardProps) {
           <div className="flex items-center gap-3">
             <div
               className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                lamp.state.isOn ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-400"
+                lamp.state.isOn
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                  : "bg-muted text-muted-foreground"
               }`}
             >
-              {lamp.state.isOn ? <Lightbulb className="h-5 w-5" /> : <LightbulbOff className="h-5 w-5" />}
+              {lamp.state.isOn ? (
+                <Lightbulb className="h-5 w-5" />
+              ) : (
+                <LightbulbOff className="h-5 w-5" />
+              )}
             </div>
             <div>
               <Link to={`/zigbee-lamp/${lamp.id}`}>
-                <CardTitle className="cursor-pointer text-base hover:underline">{lamp.name}</CardTitle>
+                <CardTitle className="cursor-pointer text-base hover:underline">
+                  {lamp.name}
+                </CardTitle>
               </Link>
-              <CardDescription className="text-xs">{lamp.model || t("zigbeeLamps.unknownModel")}</CardDescription>
+              <CardDescription className="text-xs">
+                {lamp.model || t("zigbeeLamps.unknownModel")}
+              </CardDescription>
             </div>
           </div>
           <Switch
@@ -1093,7 +1168,9 @@ export function ZigbeePairingPanel() {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {pairing?.active ? (
-        <Badge variant="success">{t("zigbeeLamps.pairingActive", { count: pairing.remainingSeconds })}</Badge>
+        <Badge variant="success">
+          {t("zigbeeLamps.pairingActive", { count: pairing.remainingSeconds })}
+        </Badge>
       ) : (
         <Badge variant="secondary">{t("zigbeeLamps.pairingInactive")}</Badge>
       )}

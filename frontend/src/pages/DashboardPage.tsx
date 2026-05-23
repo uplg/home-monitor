@@ -38,10 +38,10 @@ const deviceIcons: Record<string, React.ReactNode> = {
 };
 
 const deviceColors: Record<string, string> = {
-  feeder: "bg-slate-100 text-slate-700",
-  fountain: "bg-slate-100 text-slate-700",
-  "litter-box": "bg-slate-100 text-slate-700",
-  unknown: "bg-slate-100 text-slate-700",
+  feeder: "bg-muted text-muted-foreground",
+  fountain: "bg-muted text-muted-foreground",
+  "litter-box": "bg-muted text-muted-foreground",
+  unknown: "bg-muted text-muted-foreground",
 };
 
 function DeviceCard({ device }: { device: Device }) {
@@ -87,7 +87,7 @@ function DeviceCard({ device }: { device: Device }) {
   const isLoading = connectMutation.isPending || disconnectMutation.isPending;
 
   return (
-    <Card className="border-0 bg-white/85 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+    <Card className="border-0 bg-card/85 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
       <CardHeader className="flex flex-row items-center gap-4 pb-4">
         <div
           className={`flex h-16 w-16 items-center justify-center rounded-xl ${
@@ -153,7 +153,7 @@ function DeviceCard({ device }: { device: Device }) {
 
 function DeviceCardSkeleton() {
   return (
-    <Card className="border-0 bg-white/85 shadow-sm">
+    <Card className="border-0 bg-card/85 shadow-sm">
       <CardHeader className="flex flex-row items-center gap-4 pb-4">
         <Skeleton className="h-16 w-16 rounded-xl" />
         <div className="flex-1 space-y-2">
@@ -312,14 +312,14 @@ export function DashboardPage() {
         <section className="space-y-4">
           <DashboardSectionHeader
             icon={<Lightbulb className="h-5 w-5" />}
-            iconClassName="bg-slate-100 text-slate-700"
+            iconClassName="bg-muted text-muted-foreground"
             title={t("hueLamps.title")}
             description={t("hueLamps.subtitle")}
             actions={
               <Button
                 variant="outline"
                 size="sm"
-                className="border-slate-200 bg-white/80 hover:bg-white"
+                className="border-border bg-card/80 hover:bg-card"
                 onClick={() => scanHueLampsMutation.mutate()}
                 disabled={scanHueLampsMutation.isPending}
               >
@@ -345,13 +345,13 @@ export function DashboardPage() {
               ))}
             </div>
           ) : (
-            <Card className="border-0 bg-white/85 p-8 text-center shadow-sm">
+            <Card className="border-0 bg-card/85 p-8 text-center shadow-sm">
               <Lightbulb className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
               <p className="mt-4 text-muted-foreground">{t("hueLamps.noLamps")}</p>
               <p className="mt-2 text-sm text-muted-foreground">{t("hueLamps.noLampsHint")}</p>
               <Button
                 variant="outline"
-                className="mt-4 border-slate-200 bg-white/80 hover:bg-white"
+                className="mt-4 border-border bg-card/80 hover:bg-card"
                 onClick={() => scanHueLampsMutation.mutate()}
                 disabled={scanHueLampsMutation.isPending}
               >
@@ -367,7 +367,8 @@ export function DashboardPage() {
 
           {hueLampsData?.lamps && hueLampsData.lamps.length > 0 && (
             <div className="text-center text-sm text-muted-foreground">
-              {t("hueLamps.lampCount", { count: hueLampsData.total })} - {t("hueLamps.connectedCount", { count: hueLampsData.connected })}
+              {t("hueLamps.lampCount", { count: hueLampsData.total })} -{" "}
+              {t("hueLamps.connectedCount", { count: hueLampsData.connected })}
             </div>
           )}
         </section>
@@ -395,7 +396,7 @@ export function DashboardPage() {
               ))}
             </div>
           ) : (
-            <Card className="border-0 bg-white/85 p-8 text-center shadow-sm">
+            <Card className="border-0 bg-card/85 p-8 text-center shadow-sm">
               <Lightbulb className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
               <p className="mt-4 text-muted-foreground">{t("zigbeeLamps.noLamps")}</p>
               <p className="mt-2 text-sm text-muted-foreground">{t("zigbeeLamps.noLampsHint")}</p>
@@ -404,7 +405,8 @@ export function DashboardPage() {
 
           {zigbeeLampsData?.lamps && zigbeeLampsData.lamps.length > 0 && (
             <div className="text-center text-sm text-muted-foreground">
-              {t("zigbeeLamps.lampCount", { count: zigbeeLampsData.total })} - {t("zigbeeLamps.connectedCount", {
+              {t("zigbeeLamps.lampCount", { count: zigbeeLampsData.total })} -{" "}
+              {t("zigbeeLamps.connectedCount", {
                 count: zigbeeLampsData.connected,
               })}
             </div>
@@ -415,7 +417,7 @@ export function DashboardPage() {
       <section className="space-y-4">
         <DashboardSectionHeader
           icon={<Plug className="h-5 w-5" />}
-          iconClassName="bg-slate-100 text-slate-700"
+          iconClassName="bg-muted text-muted-foreground"
           title={t("meross.title")}
           description={t("meross.subtitle")}
         />
@@ -432,7 +434,7 @@ export function DashboardPage() {
             ))}
           </div>
         ) : (
-          <Card className="border-0 bg-white/85 p-8 text-center shadow-sm">
+          <Card className="border-0 bg-card/85 p-8 text-center shadow-sm">
             <Plug className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
             <p className="mt-4 text-muted-foreground">{t("meross.notFound")}</p>
           </Card>
@@ -440,7 +442,8 @@ export function DashboardPage() {
 
         {merossPlugsData?.devices && merossPlugsData.devices.length > 0 && (
           <div className="text-center text-sm text-muted-foreground">
-            {t("meross.plugCount", { count: merossPlugsData.total })} - {t("meross.onlineCount", {
+            {t("meross.plugCount", { count: merossPlugsData.total })} -{" "}
+            {t("meross.onlineCount", {
               count: merossPlugsData.devices.filter((d) => d.isOnline).length,
             })}
           </div>
@@ -450,12 +453,12 @@ export function DashboardPage() {
       <section className="space-y-4">
         <DashboardSectionHeader
           icon={<Power className="h-5 w-5" />}
-          iconClassName="bg-slate-100 text-slate-700"
+          iconClassName="bg-muted text-muted-foreground"
           title={t("dashboard.tuyaSection")}
           description={t("dashboard.tuyaSubtitle")}
           actions={
             <>
-              <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-500">
+              <div className="rounded-full border border-border bg-card px-3 py-1 text-sm text-muted-foreground">
                 {t("dashboard.deviceCount", { count: data?.total ?? 0 })}
               </div>
               <Button
@@ -463,7 +466,7 @@ export function DashboardPage() {
                 size="sm"
                 onClick={() => queryClient.invalidateQueries({ queryKey: ["devices"] })}
                 disabled={isLoading}
-                className="flex-1 border-slate-200 bg-white/80 hover:bg-white sm:flex-none"
+                className="flex-1 border-border bg-card/80 hover:bg-card sm:flex-none"
               >
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
                 {t("common.refresh")}
@@ -473,7 +476,7 @@ export function DashboardPage() {
                 size="sm"
                 onClick={() => connectAllMutation.mutate()}
                 disabled={connectAllMutation.isPending}
-                className="flex-1 bg-slate-900 text-white hover:bg-slate-800 sm:flex-none"
+                className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 sm:flex-none"
               >
                 {connectAllMutation.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -513,28 +516,29 @@ export function DashboardPage() {
             ))}
           </div>
         ) : (
-          <Card className="border-0 bg-white/85 p-12 text-center shadow-sm">
+          <Card className="border-0 bg-card/85 p-12 text-center shadow-sm">
             <p className="text-muted-foreground">{t("dashboard.noDevices")}</p>
             <p className="mt-2 text-sm text-muted-foreground">{t("dashboard.noDevicesHint")}</p>
           </Card>
         )}
-
       </section>
 
       <section className="space-y-4">
         <DashboardSectionHeader
           icon={<Snowflake className="h-5 w-5" />}
-          iconClassName="bg-slate-100 text-slate-700"
+          iconClassName="bg-muted text-muted-foreground"
           title={t("climate.dashboardTitle")}
           description={t("climate.dashboardSubtitle")}
           actions={
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              className="rounded-full text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               onClick={() => {
                 queryClient.invalidateQueries({ queryKey: ["broadlink", "discover"] });
-                queryClient.invalidateQueries({ queryKey: ["broadlink", "mitsubishi-codes", "msz-hj5va"] });
+                queryClient.invalidateQueries({
+                  queryKey: ["broadlink", "mitsubishi-codes", "msz-hj5va"],
+                });
               }}
             >
               <RefreshCw className="h-4 w-4" />

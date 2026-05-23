@@ -81,7 +81,7 @@ function TempoSkeleton() {
         </div>
       </CardHeader>
       <CardContent className="px-0">
-        <div className="rounded-2xl bg-white/80 px-4 py-4 shadow-sm">
+        <div className="rounded-2xl bg-card/80 px-4 py-4 shadow-sm">
           <div className="flex items-center justify-center gap-4">
             <div className="flex flex-col items-center gap-1">
               <Skeleton className="h-3 w-12" />
@@ -170,28 +170,30 @@ export function TempoCard() {
 
   const currentTarif = getCurrentTarif();
   const dashboardPredictions =
-    predictionsData?.predictions?.filter((prediction) => {
-      const predictionDate = new Date(`${prediction.date}T00:00:00`);
-      const tomorrow = new Date();
-      tomorrow.setHours(0, 0, 0, 0);
-      tomorrow.setDate(tomorrow.getDate() + 2);
-      return predictionDate >= tomorrow;
-    }).slice(0, 4) ?? [];
+    predictionsData?.predictions
+      ?.filter((prediction) => {
+        const predictionDate = new Date(`${prediction.date}T00:00:00`);
+        const tomorrow = new Date();
+        tomorrow.setHours(0, 0, 0, 0);
+        tomorrow.setDate(tomorrow.getDate() + 2);
+        return predictionDate >= tomorrow;
+      })
+      .slice(0, 4) ?? [];
 
   return (
     <Card className="border-0 bg-transparent shadow-none">
       <CardHeader className="px-0 pb-1">
         <DashboardSectionHeader
           icon={<Calendar className="h-5 w-5" />}
-          iconClassName="bg-slate-100 text-slate-700"
+          iconClassName="bg-muted text-muted-foreground"
           title={
             <button
               type="button"
-              className="group flex items-center gap-2 text-left transition-colors hover:text-slate-700"
+              className="group flex items-center gap-2 text-left transition-colors hover:text-foreground"
               onClick={() => navigate("/tempo-predictions")}
             >
               <span>{t("tempo.title")}</span>
-              <TrendingUp className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-slate-700" />
+              <TrendingUp className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />
             </button>
           }
           description={t("tempo.subtitle")}
@@ -199,7 +201,7 @@ export function TempoCard() {
       </CardHeader>
       <CardContent className="space-y-4 px-0 pb-0">
         {/* Colors section */}
-        <div className="rounded-2xl bg-white/80 px-4 py-4 shadow-sm">
+        <div className="rounded-2xl bg-card/80 px-4 py-4 shadow-sm">
           <div className="flex items-center justify-center gap-6">
             <ColorBadge
               color={displayTodayColor}
@@ -222,8 +224,8 @@ export function TempoCard() {
         </div>
 
         {dashboardPredictions.length > 0 && (
-          <div className="rounded-2xl bg-slate-50 p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+          <div className="rounded-2xl bg-muted p-4">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <TrendingUp className="h-4 w-4" />
               {t("tempo.prediction.dashboardTitle")}
             </div>
@@ -234,16 +236,18 @@ export function TempoCard() {
                 return (
                   <div
                     key={prediction.date}
-                    className={`rounded-xl p-2 text-center ${styles?.light ?? "bg-white text-slate-700"}`}
+                    className={`rounded-xl p-2 text-center ${styles?.light ?? "bg-card text-muted-foreground"}`}
                   >
-                    <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                       {formatDate(prediction.date)}
                     </div>
                     <div className="mt-1 text-sm font-semibold">
                       {color ? t(`tempo.colors.${color.toLowerCase()}`) : t("tempo.unknown")}
                     </div>
-                    <div className="mt-1 text-[11px] text-slate-500">
-                      {t("tempo.prediction.confidenceShort", { value: Math.round(prediction.confidence * 100) })}
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {t("tempo.prediction.confidenceShort", {
+                        value: Math.round(prediction.confidence * 100),
+                      })}
                     </div>
                   </div>
                 );
@@ -281,7 +285,7 @@ export function TempoCard() {
 
         {/* All tariffs summary */}
         {data.tarifs && (
-          <div className="rounded-2xl bg-slate-50 px-4 py-3 text-xs text-muted-foreground">
+          <div className="rounded-2xl bg-muted px-4 py-3 text-xs text-muted-foreground">
             <details className="cursor-pointer">
               <summary className="flex items-center gap-1 hover:text-foreground">
                 {t("tempo.allTarifs")}

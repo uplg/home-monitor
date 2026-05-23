@@ -1082,7 +1082,9 @@ async fn ensure_coordinator_network(
 async fn teardown_context(context: EzspContext) {
     info!("tearing down EZSP pipeline");
     // First abort the EZSP splitter (consumes uart).
-    context.uart.abort().await;
+    if let Err(error) = context.uart.abort().await {
+        warn!(error = ?error, "EZSP splitter abort returned an error (non-fatal)");
+    }
     // Then terminate ASH actor tasks (transmitter + receiver).
     if let Err(error) = context.ash_tasks.terminate().await {
         warn!(error = ?error, "ASH tasks termination returned an error (non-fatal)");

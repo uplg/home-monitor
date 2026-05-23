@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { House, Home, LogOut, Settings, Menu, X } from "lucide-react";
 
 export function Layout() {
@@ -17,8 +18,8 @@ export function Layout() {
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
         <div className="container flex h-14 items-center">
-          <Link to="/" className="flex items-center gap-2 font-semibold text-slate-950">
-            <House className="h-6 w-6 text-slate-900" />
+          <Link to="/" className="flex items-center gap-2 font-semibold text-foreground">
+            <House className="h-6 w-6 text-foreground" />
             <span className="hidden xs:inline">Maison</span>
           </Link>
 
@@ -31,6 +32,7 @@ export function Layout() {
           </nav>
 
           <div className="ml-auto hidden items-center gap-4 md:flex">
+            <ThemeSwitcher />
             <LanguageSwitcher />
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Settings className="h-4 w-4" />
@@ -45,6 +47,7 @@ export function Layout() {
           </div>
 
           <div className="ml-auto flex items-center gap-2 md:hidden">
+            <ThemeSwitcher />
             <LanguageSwitcher />
             <Button
               variant="ghost"

@@ -1,8 +1,6 @@
 const LEGACY_CACHE_PREFIXES = ["home-monitor-v"];
 
-function hasLegacyWorkerScript(
-  worker: ServiceWorker | null
-): worker is ServiceWorker {
+function hasLegacyWorkerScript(worker: ServiceWorker | null): worker is ServiceWorker {
   return Boolean(worker && new URL(worker.scriptURL).pathname === "/sw.js");
 }
 
@@ -18,10 +16,10 @@ export async function cleanupLegacyPwaArtifacts(): Promise<void> {
       registrations
         .filter((registration) => {
           return [registration.active, registration.waiting, registration.installing].some(
-            hasLegacyWorkerScript
+            hasLegacyWorkerScript,
           );
         })
-        .map((registration) => registration.unregister())
+        .map((registration) => registration.unregister()),
     );
   }
 
@@ -33,7 +31,7 @@ export async function cleanupLegacyPwaArtifacts(): Promise<void> {
         .filter((cacheKey) => {
           return LEGACY_CACHE_PREFIXES.some((prefix) => cacheKey.startsWith(prefix));
         })
-        .map((cacheKey) => caches.delete(cacheKey))
+        .map((cacheKey) => caches.delete(cacheKey)),
     );
   }
 }

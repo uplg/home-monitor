@@ -103,9 +103,7 @@ export function NabaztagCard() {
                   {config?.name || t("nabaztag.title")}
                 </CardTitle>
               </Link>
-              <CardDescription className="text-xs">
-                {config?.host}
-              </CardDescription>
+              <CardDescription className="text-xs">{config?.host}</CardDescription>
             </div>
           </div>
         </div>
@@ -411,9 +409,7 @@ export function NabaztagFullControl() {
               <Input
                 value={editingConfig.host}
                 placeholder={t("nabaztag.hostPlaceholder")}
-                onChange={(e) =>
-                  setConfigForm({ ...editingConfig, host: e.target.value })
-                }
+                onChange={(e) => setConfigForm({ ...editingConfig, host: e.target.value })}
               />
             </div>
             <div className="space-y-1">
@@ -421,9 +417,7 @@ export function NabaztagFullControl() {
               <Input
                 value={editingConfig.name}
                 placeholder={t("nabaztag.namePlaceholder")}
-                onChange={(e) =>
-                  setConfigForm({ ...editingConfig, name: e.target.value })
-                }
+                onChange={(e) => setConfigForm({ ...editingConfig, name: e.target.value })}
               />
             </div>
           </div>
@@ -660,10 +654,7 @@ export function NabaztagFullControl() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Switch
-                  checked={ledBreathing}
-                  onCheckedChange={setLedBreathing}
-                />
+                <Switch checked={ledBreathing} onCheckedChange={setLedBreathing} />
                 <span className="text-sm">{t("nabaztag.breathing")}</span>
               </div>
               <div className="flex gap-2">
@@ -844,9 +835,7 @@ export function NabaztagFullControl() {
                 </div>
                 <Button
                   size="sm"
-                  onClick={() =>
-                    infoMutation.mutate({ service: infoService, value: infoValue })
-                  }
+                  onClick={() => infoMutation.mutate({ service: infoService, value: infoValue })}
                   disabled={infoMutation.isPending}
                 >
                   {t("nabaztag.setService")}
@@ -930,9 +919,7 @@ export function NabaztagFullControl() {
                   onClick={() => tempoPushMutation.mutate(false)}
                   disabled={tempoPushMutation.isPending}
                 >
-                  {tempoPushMutation.isPending && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
+                  {tempoPushMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   <Send className="mr-2 h-4 w-4" />
                   {t("nabaztag.pushTempo")}
                 </Button>
@@ -961,7 +948,9 @@ export function NabaztagFullControl() {
             <CardContent className="space-y-3">
               <Textarea
                 value={forthCode}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setForthCode(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  setForthCode(e.target.value)
+                }
                 placeholder={t("nabaztag.forthPlaceholder")}
                 rows={3}
                 className="font-mono text-sm"

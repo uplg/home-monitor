@@ -206,8 +206,8 @@ export function FountainControl({ deviceId }: FountainControlProps) {
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
-                <Power className="h-5 w-5 text-slate-700" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                <Power className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
                 <Label>{t("fountain.power")}</Label>
@@ -261,8 +261,8 @@ export function FountainControl({ deviceId }: FountainControlProps) {
 
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
-                <Leaf className="h-5 w-5 text-slate-700" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                <Leaf className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
                 <Label>{t("fountain.ecoMode")}</Label>

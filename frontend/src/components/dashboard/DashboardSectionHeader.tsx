@@ -13,7 +13,7 @@ export function DashboardSectionHeader({
   title,
   description,
   actions,
-  iconClassName = "bg-slate-100 text-slate-700",
+  iconClassName = "bg-muted text-muted-foreground",
 }: DashboardSectionHeaderProps) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -24,7 +24,9 @@ export function DashboardSectionHeader({
           {icon}
         </div>
         <div className="min-w-0 space-y-0.5">
-          <div className="text-[1.1rem] font-semibold tracking-[-0.02em] text-slate-950">{title}</div>
+          <div className="text-[1.1rem] font-semibold tracking-[-0.02em] text-foreground">
+            {title}
+          </div>
           {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
         </div>
       </div>

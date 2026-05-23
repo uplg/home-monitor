@@ -48,14 +48,18 @@ export function LoginPage() {
       <div className="absolute top-4 right-4">
         <LanguageSwitcher />
       </div>
-      <Card className="relative w-full max-w-md border-white/70 bg-white/88 shadow-[0_32px_100px_-36px_rgba(15,23,42,0.35)] backdrop-blur">
+      <Card className="relative w-full max-w-md border-border bg-card/88 shadow-[0_32px_100px_-36px_rgba(15,23,42,0.35)] backdrop-blur">
         <CardHeader className="space-y-4 px-8 pt-8 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-lg shadow-slate-900/15">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-slate-900/15">
             <House className="h-7 w-7" />
           </div>
           <div className="space-y-2">
-            <CardTitle className="text-3xl tracking-[-0.04em] text-slate-950">{t("branding.name")}</CardTitle>
-            <CardDescription className="text-sm text-slate-500">{t("auth.loginDescription")}</CardDescription>
+            <CardTitle className="text-3xl tracking-[-0.04em] text-foreground">
+              {t("branding.name")}
+            </CardTitle>
+            <CardDescription className="text-sm text-muted-foreground">
+              {t("auth.loginDescription")}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent className="px-8 pb-8">
@@ -71,7 +75,7 @@ export function LoginPage() {
                 required
                 autoComplete="username"
                 disabled={isLoading}
-                className="h-11 border-slate-200 bg-slate-50/70"
+                className="h-11 border-border bg-muted/70"
               />
             </div>
             <div className="space-y-2">
@@ -85,10 +89,14 @@ export function LoginPage() {
                 required
                 autoComplete="current-password"
                 disabled={isLoading}
-                className="h-11 border-slate-200 bg-slate-50/70"
+                className="h-11 border-border bg-muted/70"
               />
             </div>
-            <Button type="submit" className="h-11 w-full bg-slate-950 text-white hover:bg-slate-800" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="h-11 w-full bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={isLoading}
+            >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

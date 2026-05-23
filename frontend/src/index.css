@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode: `dark:` utilities apply when an ancestor
+   (or the element itself) carries the `.dark` class set by ThemeProvider. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-background: hsl(0 0% 100%);
   --color-foreground: hsl(222.2 84% 4.9%);
@@ -51,7 +55,10 @@
       linear-gradient(180deg, hsl(40 35% 98%), hsl(210 30% 98%));
     background-attachment: fixed;
     background-repeat: no-repeat;
-    background-size: 100% 100%, 100% 100%, 100% 100%;
+    background-size:
+      100% 100%,
+      100% 100%,
+      100% 100%;
     min-height: 100vh;
     @apply text-foreground antialiased;
   }
@@ -101,4 +108,11 @@
   --color-border: hsl(217.2 32.6% 17.5%);
   --color-input: hsl(217.2 32.6% 17.5%);
   --color-ring: hsl(210 40% 98%);
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at top left, hsl(199 89% 48% / 0.18), transparent 26%),
+    radial-gradient(circle at 85% 15%, hsl(42 100% 60% / 0.12), transparent 22%),
+    linear-gradient(180deg, hsl(222.2 84% 4.9%), hsl(217.2 40% 8%));
 }

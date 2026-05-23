@@ -1062,8 +1062,7 @@ export const nabaztagApi = {
     api<NabaztagSimpleResponse>("/nabaztag/sound/communication", { method: "POST" }),
   soundAck: () => api<NabaztagSimpleResponse>("/nabaztag/sound/ack", { method: "POST" }),
   soundAbort: () => api<NabaztagSimpleResponse>("/nabaztag/sound/abort", { method: "POST" }),
-  soundMinistop: () =>
-    api<NabaztagSimpleResponse>("/nabaztag/sound/ministop", { method: "POST" }),
+  soundMinistop: () => api<NabaztagSimpleResponse>("/nabaztag/sound/ministop", { method: "POST" }),
   stop: () => api<NabaztagSimpleResponse>("/nabaztag/stop", { method: "POST" }),
 
   // Info services

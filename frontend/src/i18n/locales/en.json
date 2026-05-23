@@ -49,6 +49,12 @@
     "climate": "Climate",
     "footer": "Uplg | Maison © {{year}}"
   },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
   "dashboard": {
     "title": "Dashboard",
     "subtitle": "Manage all your connected devices",

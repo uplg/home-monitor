@@ -17,6 +17,24 @@
     <link rel="manifest" href="/manifest.json?v=2" />
 
     <title>Maison</title>
+
+    <!-- Apply the persisted/system theme before first paint to avoid a flash. -->
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("theme");
+          const dark =
+            stored === "dark" ||
+            ((stored === "system" || !stored) &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) {
+            document.documentElement.classList.add("dark");
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute("content", "#020817");
+          }
+        } catch {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
