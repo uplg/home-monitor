@@ -42,3 +42,6 @@ mosquitto/log/
 .vscode/
 *.swp
 *.swo
+
+# screenshot tool profile
+scripts/.shot-profile/

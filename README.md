@@ -10,7 +10,7 @@
 - Query Tempo data, predictions, history, and calibration helpers.
 - Keep access private with local authentication and secure session cookies.
 
-![Maison](/screenshots/maison.jpg)
+![Maison](/screenshots/maison.jpg?v=1779566103)
 
 Exposes only two app components:
 
