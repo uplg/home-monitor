@@ -226,7 +226,7 @@ export function TempoCard() {
         </div>
 
         {dashboardPredictions.length > 0 && (
-          <div className="rounded-2xl bg-muted p-4">
+          <div className="rounded-2xl bg-card/80 p-4">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <TrendingUp className="h-4 w-4" />
               {t("tempo.prediction.dashboardTitle")}
