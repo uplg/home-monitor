@@ -8,17 +8,30 @@ proto main 0;;
 #include /work/garenne/leds.mtl
 #include /work/garenne/id.mtl
 #include /work/garenne/net/wire.mtl
+#include /work/garenne/net/env.mtl
+#include /work/garenne/net/conf.mtl
 #include /work/garenne/net/ipv4.mtl
 #include /work/garenne/net/udp.mtl
 #include /work/garenne/net/arp.mtl
 #include /work/garenne/net/icmp.mtl
+#include /work/garenne/net/tcp.mtl
 #include /work/garenne/log.mtl
+#include /work/garenne/net/link.mtl
+#include /work/garenne/http/client.mtl
+#include /work/garenne/http/server.mtl
 #include /work/garenne/ctl.mtl
+#include /work/garenne/net/rx.mtl
 #include /work/garenne/tests/t.mtl
 #include /work/garenne/tests/t_wire.mtl
 #include /work/garenne/tests/t_rx.mtl
+#include /work/garenne/tests/t_tcp.mtl
+#include /work/garenne/tests/t_srv.mtl
+#include /work/garenne/tests/t_link.mtl
 
 fun main =
     t_wire;
     t_rx;
+    t_tcp;
+    t_srv;
+    t_link;
     t_summary;;

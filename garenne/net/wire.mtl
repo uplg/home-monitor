@@ -12,13 +12,26 @@ const LLC_ARP = "\$AA\$AA\$03\$00\$00\$00\$08\$06";;
 const MAC_BROADCAST = "\$FF\$FF\$FF\$FF\$FF\$FF";;
 const IP_BROADCAST = "\$FF\$FF\$FF\$FF";;
 
-// Our IP, as a 4-byte string. TEMPORARY hardcode: the Freebox holds this
-// lease for our MAC (the boot's DHCP); env.mtl (G4) then a real DHCP
-// client (G6) will retire it.
-const NET_IP = "\$C0\$A8\$01\$9B";;  // 192.168.1.155
+// Our addresses, 4-byte strings. The defaults are the Freebox lease for
+// our MAC; env_init overrides them with what the boot's DHCP actually
+// obtained (handed over in the env register).
+var NET_IP = "\$C0\$A8\$01\$9B";;  // 192.168.1.155
+var net_mask = nil;;
+var net_gateway = nil;;
+var net_dns = nil;;
+
+// Where clapier lives. TEMPORARY hardcode: the flash config sector
+// holds the real server field; parsing it is a later refinement.
+const CLAPIER_IP = "\$C0\$A8\$01\$A5";;  // 192.168.1.165
 
 // Our MAC, cached from the netMac native at rx_init time.
 var net_mac = nil;;
+
+// Stack counters, surfaced by the http server's /status.
+var stat_rx_frames = 0;;
+var stat_rx_dups = 0;;
+var stat_tcp_accepts = 0;;
+var stat_tcp_retx = 0;;
 
 // 16-bit big-endian value as a 2-byte string, for strcatlist builders.
 fun word2 v = strcat (ctoa ((v >> 8) & 255)) (ctoa (v & 255));;
@@ -27,3 +40,30 @@ fun word2 v = strcat (ctoa ((v >> 8) & 255)) (ctoa (v & 255));;
 // complement sum (chainable via its seed); the header field wants the
 // complement of it.
 fun chk_final sum = (~sum) & 0xFFFF;;
+
+// 32-bit big-endian add on a 4-byte string, mod 2^32, returning a new
+// string. The netSeqAdd native mutates its argument in place and its
+// opcode leaves the VM stack in an expression-shape-dependent state
+// (same code in both interpreters), so we do the math ourselves.
+// n must be a small positive int, which every protocol use is.
+fun seq_add s n =
+    let ((strgetword s 2) & 0xFFFF) + (n & 0xFFFF) -> lo in
+    let (strgetword s 0) + (n >> 16) + (lo >> 16) -> hi in
+    strcat (word2 hi) (word2 (lo & 0xFFFF));;
+
+// Dotted-quad display of a 4-byte IP, for logs and headers.
+fun ip_str ip =
+    strcatlist (itoa (strget ip 0)) :: "." :: (itoa (strget ip 1)) ::
+        "." :: (itoa (strget ip 2)) :: "." :: (itoa (strget ip 3)) :: nil;;
+
+// First n elements of a list, shared by the small bounded caches.
+fun list_take l n =
+    if (l == nil) || (n <= 0) then nil
+    else (hd l) :: list_take (tl l) (n - 1);;
+
+fun _mac_hex m i =
+    if i >= (strlen m) then ""
+    else strcat (ctoh (strget m i)) (_mac_hex m (i + 1));;
+
+// Bare-hex display of a MAC, the form clapier's tribe routing accepts.
+fun mac_str m = _mac_hex m 0;;

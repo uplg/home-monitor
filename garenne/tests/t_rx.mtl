@@ -96,6 +96,9 @@ fun _t_ctl =
     t_true "ctl wrong magic -> nil" ((ctl_input T_CTL_BADSUM T_PEER_MAC) == nil);;
 
 fun t_rx =
+    // These vectors reuse IP idents across feeds; radio dedup is
+    // t_link's business, off here.
+    set _rx_dedup_on = 0;
     set net_mac = netMac;
     t_eq "simulator netMac" net_mac "\$01\$23\$45\$67\$89\$AB";
     _t_arp;

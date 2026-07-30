@@ -1,0 +1,113 @@
+// G6: config sector parsers, the watchdog's decision table, ARP aging,
+// the radio-duplicate filter, and the reassoc guards.
+
+fun _t_pad s n = strcat s (_t_rep "\0" (n - (strlen s)));;
+
+// A fabricated 226-byte sector: server URL, SSID Freebox-TEST, given
+// crypt byte, PMK of 32 x 0xAB, magic 0x42.
+fun _t_conf_sector server crypt =
+    strcatlist
+        (_t_pad server 58) ::            // url(41) + dhcp + ip/mask/gw/dns
+        (_t_pad "Freebox-TEST" 32) ::    // ssid @58
+        "\0" ::                          // auth @90
+        crypt ::                         // crypt @91
+        (_t_rep "\0" 83) ::              // key0(64) + free, up to 175
+        (_t_rep "\$AB" 32) ::            // pmk @175
+        "\$42" ::                        // magic @207
+        (_t_rep "\0" 18) :: nil;;        // tail to 226
+
+fun _t_conf =
+    let _t_conf_sector "192.168.1.165/vl" "\$40" -> s in
+    (
+        t_int "conf sector length" (strlen s) CONF_LENGTH;
+        t_eq "conf ssid" (conf_ssid s) "Freebox-TEST";
+        t_int "conf auth" (conf_auth s) 0;
+        t_int "conf crypt" (conf_crypt s) CRYPT_WPA2;
+        t_eq "conf pmk" (conf_pmk s) (_t_rep "\$AB" 32);
+        t_int "conf magic" (conf_magic s) 0x42;
+        t_eq "conf server" (conf_server s) "192.168.1.165/vl";
+        t_eq "conf server ip" (conf_server_ip s) "\$C0\$A8\$01\$A5"
+    );
+    t_true "server hostname is nil" ((conf_server_ip (_t_conf_sector "r.nabaztag.com/vl" "\$40")) == nil);
+    t_true "server bad quad is nil" ((conf_server_ip (_t_conf_sector "300.1.2.3/vl" "\$40")) == nil);
+    t_eq "server bare quad" (conf_server_ip (_t_conf_sector "10.0.0.1" "\$40")) "\$0A\$00\$00\$01";
+    // The shape the real EEPROM turned out to hold (session 5).
+    t_eq "server with port" (conf_server_ip (_t_conf_sector "192.168.1.165:80/vl/" "\$40")) "\$C0\$A8\$01\$A5";
+    0;;
+
+fun _t_decide =
+    t_int "up and chatty" (link_decide 4 1000 nil 0) LINK_ACT_NONE;
+    t_int "quiet lan probes" (link_decide 4 40000 nil 0) LINK_ACT_PROBE;
+    t_int "rx dead reassoc" (link_decide 4 100000 nil 0) LINK_ACT_REASSOC;
+    t_int "idle reassoc now" (link_decide 1 1000 nil 0) LINK_ACT_REASSOC;
+    t_int "settling waits" (link_decide 1 1000 5000 1) LINK_ACT_NONE;
+    t_int "grace over retry" (link_decide 1 1000 25000 1) LINK_ACT_REASSOC;
+    t_int "enough fails reboot" (link_decide 1 1000 25000 2) LINK_ACT_REBOOT;
+    t_int "driver busy none" (link_decide 3 40000 nil 0) LINK_ACT_NONE;
+    t_int "driver stuck reboot" (link_decide 2 200000 nil 0) LINK_ACT_REBOOT;
+    t_int "broken radio reassoc" (link_decide 0 1000 nil 0) LINK_ACT_REASSOC;
+    0;;
+
+fun _t_take =
+    let 1 :: 2 :: 3 :: nil -> l in
+    (
+        t_int "take keeps head" (hd (list_take l 2)) 1;
+        t_true "take stops at n" ((tl (tl (list_take l 2))) == nil);
+        t_true "take zero is empty" ((list_take l 0) == nil)
+    );;
+
+fun _t_arp_age =
+    let "\$C0\$A8\$01\$01" -> ip in
+    let "\$AA\$AA\$AA\$AA\$AA\$01" -> m1 in
+    let [ip m1 1000] :: nil -> cache in
+    (
+        t_eq "arp fresh hit" (_arp_find cache ip 2000) m1;
+        t_true "arp aged out" ((_arp_find cache ip 700000) == nil);
+        t_true "arp miss other ip" ((_arp_find cache "\$C0\$A8\$01\$02" 2000) == nil)
+    );
+    // Re-learned ip replaces its entry, never stacks a stale twin.
+    set _arp_cache = nil;
+    _arp_cache_put "\$0A\$00\$00\$05" "\$AA\$AA\$AA\$AA\$AA\$02";
+    _arp_cache_put "\$0A\$00\$00\$05" "\$AA\$AA\$AA\$AA\$AA\$03";
+    t_eq "arp refresh newest" (arp_lookup "\$0A\$00\$00\$05") "\$AA\$AA\$AA\$AA\$AA\$03";
+    t_true "arp refresh single entry" ((tl _arp_cache) == nil);
+    set _arp_cache = nil;
+    0;;
+
+fun _t_dedup =
+    set _rx_seen = nil;
+    set _rx_dedup_on = 1;
+    t_int "first sighting passes" (rx_dedup "\$C0\$A8\$01\$50" 0x1234) 0;
+    t_int "duplicate dropped" (rx_dedup "\$C0\$A8\$01\$50" 0x1234) 1;
+    t_int "other ident passes" (rx_dedup "\$C0\$A8\$01\$50" 0x1235) 0;
+    t_int "other src passes" (rx_dedup "\$C0\$A8\$01\$51" 0x1234) 0;
+    t_true "stale sighting forgotten"
+        (!(_dedup_find (["\$C0\$A8\$01\$50" 0x1234 0] :: nil) "\$C0\$A8\$01\$50" 0x1234 5000));
+    // Through the dispatcher: the same ICMP frame twice, one reply.
+    set _rx_seen = nil;
+    set stat_rx_dups = 0;
+    wire_rx T_ICMP_REQ T_PEER_MAC;
+    wire_rx T_ICMP_REQ T_PEER_MAC;
+    t_int "radio duplicate filtered" stat_rx_dups 1;
+    0;;
+
+fun _t_reassoc =
+    set stat_reassoc = 0;
+    set _link_conf = nil;
+    t_int "reassoc without config refuses" link_reassoc 0;
+    set _link_conf = _t_conf_sector "x" "\$10";
+    t_int "reassoc wep refused" link_reassoc 0;
+    set _link_conf = _t_conf_sector "192.168.1.165/vl" "\$40";
+    t_int "reassoc empty scan gives up" link_reassoc 0;
+    t_int "reassoc attempts counted" stat_reassoc 3;
+    t_int "reassoc fails counted" _link_reassoc_fails 3;
+    0;;
+
+fun t_link =
+    _t_conf;
+    _t_decide;
+    _t_take;
+    _t_arp_age;
+    _t_dedup;
+    _t_reassoc;
+    0;;

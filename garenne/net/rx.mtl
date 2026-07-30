@@ -2,7 +2,28 @@
 // responses go out. Protocol modules stay pure (frame in, [txframe
 // macdst] out); this file is the only RX edge touching netCb/netSend.
 
+// Radio duplicates: the rt2501 does not dedup 802.11 retransmissions
+// (the ping DUPs of G2), so identical IP packets arrive twice within
+// milliseconds. Same source + same IP ident inside the window = drop.
+const DEDUP_TTL_MS = 2000;;
+const DEDUP_KEEP = 8;;
+
+var _rx_seen = nil;;        // list of [srcip ident born_ms]
+var _rx_dedup_on = 1;;      // test seam: t_rx feeds same-ident vectors
+
+fun _dedup_find l src ident now =
+    if l == nil then 0
+    else let hd l -> [s i born] in
+    if (i == ident) && (!strcmp s src) && ((now - born) < DEDUP_TTL_MS) then 1
+    else _dedup_find (tl l) src ident now;;
+
+fun rx_dedup src ident =
+    let time_ms -> now in
+    if _dedup_find _rx_seen src ident now then 1
+    else (set _rx_seen = list_take ([src ident now] :: _rx_seen) DEDUP_KEEP; 0);;
+
 fun wire_rx frame macsrc =
+    set stat_rx_frames = stat_rx_frames + 1;
     let
         if frame == nil then nil
         else if (strlen frame) < LLC_LEN then nil
@@ -11,8 +32,11 @@ fun wire_rx frame macsrc =
         else if ethertype == 0x0800 then
         (
             if !(ipv4_valid frame) then nil
+            else if _rx_dedup_on && (rx_dedup (ipv4_src frame) (strgetword frame 12)) then
+                (set stat_rx_dups = stat_rx_dups + 1; nil)
             else let ipv4_proto frame -> proto in
             if proto == IPV4_PROTO_ICMP then icmp_input frame macsrc
+            else if proto == IPV4_PROTO_TCP then (tcp_input frame macsrc; nil)
             else if proto == IPV4_PROTO_UDP then
             (
                 if !(udp_valid frame) then nil
@@ -29,6 +53,8 @@ fun wire_rx frame macsrc =
 
 fun rx_init =
     set net_mac = netMac;
+    env_init;
     netCb #wire_rx;
+    tcp_init;
     arp_announce;
     0;;

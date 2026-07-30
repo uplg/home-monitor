@@ -1,0 +1,129 @@
+// HTTP server in the rabbit dialect: one request per connection,
+// HTTP/1.0, exact Content-Length, Connection: close. The UI lives on
+// clapier; the rabbit only answers small cross-origin API calls, so
+// every response opens CORS wide. First door: /status.
+
+const HSRV_PORT = 80;;
+const HSRV_MAX_REQ = 2048;;
+
+type HttpSrv = [hsrv_buf hsrv_done];;
+
+// tcp_user is typed by the http client's record, so the server keeps
+// its own conn -> request association (compared by identity, dropped
+// on close). A handful of entries at worst, bounded by TCP_MAX_CONNS.
+var _hsrv_reqs = nil;;
+
+fun _hsrv_find l conn =
+    if l == nil then nil
+    else let hd l -> [c r] in
+    if c == conn then r
+    else _hsrv_find (tl l) conn;;
+
+fun _hsrv_drop l conn =
+    if l == nil then nil
+    else let hd l -> [c r] in
+    if c == conn then tl l
+    else (hd l) :: _hsrv_drop (tl l) conn;;
+
+fun _hsrv_status_line st =
+    if st == 200 then "200 OK"
+    else if st == 404 then "404 Not Found"
+    else "400 Bad Request";;
+
+fun hsrv_response status body =
+    strcatlist
+        "HTTP/1.0 " :: (_hsrv_status_line status) ::
+        "\13\10Server: garenne/" :: GARENNE_VERSION ::
+        "\13\10Content-Type: text/plain" ::
+        "\13\10Content-Length: " :: (itoa (strlen body)) ::
+        "\13\10Access-Control-Allow-Origin: *" ::
+        "\13\10Connection: close\13\10\13\10" ::
+        body :: nil;;
+
+fun _hsrv_task_names l =
+    if l == nil then ""
+    else let hd l -> t in
+    strcatlist t.task_name ::
+        (if (tl l) == nil then "" else ",") ::
+        (_hsrv_task_names (tl l)) :: nil;;
+
+// Line-oriented key=value: grep-friendly on a terminal, one split away
+// from a table in the clapier dashboard.
+fun _hsrv_status_body =
+    strcatlist
+        "garenne=" :: GARENNE_VERSION ::
+        "\13\10uptime_s=" :: (itoa garenne_uptime_s) ::
+        "\13\10link=" :: (itoa netState) ::
+        "\13\10rssi=" :: (itoa netRssi) ::
+        "\13\10ip=" :: (ip_str NET_IP) ::
+        "\13\10mac=" :: (mac_str net_mac) ::
+        "\13\10rx_frames=" :: (itoa stat_rx_frames) ::
+        "\13\10rx_dups=" :: (itoa stat_rx_dups) ::
+        "\13\10tcp_accepts=" :: (itoa stat_tcp_accepts) ::
+        "\13\10tcp_retx=" :: (itoa stat_tcp_retx) ::
+        "\13\10reassoc=" :: (itoa stat_reassoc) ::
+        "\13\10tasks=" :: (_hsrv_task_names _tasks) ::
+        "\13\10" :: nil;;
+
+fun _hsrv_strip_query path =
+    let strfind path 0 "?" 0 nil -> q in
+    if (q == nil) || (q < 0) then path else strsub path 0 q;;
+
+// "GET /path HTTP/x" -> [method path]; nil when it does not parse.
+fun _hsrv_reqline buf =
+    let strfind buf 0 "\13\10" 0 nil -> eol in
+    if (eol == nil) || (eol <= 0) then nil
+    else let strsub buf 0 eol -> line in
+    let strfind line 0 " " 0 nil -> s1 in
+    if (s1 == nil) || (s1 <= 0) then nil
+    else let strfind line (s1 + 1) " " 0 nil -> s2 in
+    if (s2 == nil) || (s2 <= (s1 + 1)) then nil
+    else [(strsub line 0 s1) (strsub line (s1 + 1) (s2 - s1 - 1))];;
+
+fun hsrv_route method path =
+    if strcmp method "GET" then hsrv_response 400 "garenne: GET only\13\10"
+    else let _hsrv_strip_query path -> p in
+    if !strcmp p "/status" then hsrv_response 200 _hsrv_status_body
+    else hsrv_response 404 "garenne: no such burrow door\13\10";;
+
+fun _hsrv_answer conn resp =
+    tcp_write conn resp;
+    tcp_close conn;
+    0;;
+
+// GET has no body, so the blank line completes the request. Answer
+// once; the TCP queue drains anything larger than one segment.
+fun _hsrv_ev conn ev data =
+    if ev == TCP_EV_CONNECTED then
+        (set _hsrv_reqs = [conn [hsrv_buf:"" hsrv_done:0]] :: _hsrv_reqs; 0)
+    else if ev == TCP_EV_DATA then
+        let _hsrv_find _hsrv_reqs conn -> req in
+        if (req == nil) || req.hsrv_done then 0
+        else
+        (
+            set req.hsrv_buf = strcat req.hsrv_buf data;
+            if (strlen req.hsrv_buf) > HSRV_MAX_REQ then
+            (
+                set req.hsrv_done = 1;
+                _hsrv_answer conn (hsrv_response 400 "garenne: request too long\13\10")
+            )
+            else
+            let strfind req.hsrv_buf 0 "\13\10\13\10" 0 nil -> he in
+            if (he == nil) || (he < 0) then 0
+            else
+            (
+                set req.hsrv_done = 1;
+                let _hsrv_reqline req.hsrv_buf -> rl in
+                if rl == nil then
+                    _hsrv_answer conn (hsrv_response 400 "garenne: not http\13\10")
+                else let rl -> [method path] in
+                    _hsrv_answer conn (hsrv_route method path)
+            )
+        )
+    else
+        // CLOSED or ERROR: forget the association.
+        (set _hsrv_reqs = _hsrv_drop _hsrv_reqs conn; 0);;
+
+fun hsrv_init =
+    tcp_listen HSRV_PORT #_hsrv_ev;
+    0;;

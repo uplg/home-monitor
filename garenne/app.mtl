@@ -3,10 +3,6 @@
 const GARENNE_COLOR = 0x7c5cff;;         // the burrow violet: link is up
 const GARENNE_COLOR_NOLINK = 0xffa000;;  // amber: radio link is down
 
-// rt2501 driver states, per the Violet wifi driver spec (vendor/violet):
-// 0 broken, 1 idle, 2 scanning, 3 connecting, 4 connected, 5 master.
-const NET_CONNECTED = 4;;
-
 fun garenne_heartbeat task =
     // Periodic work will live here; for now it only proves the scheduler runs.
     TaskRun;;
@@ -34,8 +30,13 @@ fun garenne_init =
     set leds_breath_color = GARENNE_COLOR;
     set leds_breathing = 1;
     rx_init;
+    hsrv_init;
+    link_init;
     task_start_ex "heartbeat" 1000 #garenne_heartbeat;
     task_start_ex "link" 500 #garenne_link_watch;
     task_start_ex "pulse" 2000 #garenne_pulse;
-    log_send (strcat "garenne " (strcat GARENNE_VERSION " awake"));
+    log_send (strcatlist
+        "garenne " :: GARENNE_VERSION ::
+        " awake env=" :: (itoa env_inherited) ::
+        " ip=" :: (ip_str NET_IP) :: nil);
     0;;

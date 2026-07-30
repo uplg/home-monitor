@@ -1,0 +1,122 @@
+// The TCP machine driven through one complete client session, every
+// frame on both directions golden (Python reference). Server is a
+// fictional 192.168.1.166; our ISS is forced to 0x1000, the server's
+// is 0xAB00, our port pinned to 0xC123.
+
+const T_SRV_IP = "\$C0\$A8\$01\$A6";;
+const T_SRV_MAC = "\$BB\$BB\$CC\$00\$33\$44";;
+
+const T_TCP_OUT_SYN = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$2C\$00\$01\$00\$00\$40\$06\$F6\$39\$C0\$A8\$01\$9B\$C0\$A8\$01\$A6\$C1\$23\$00\$50\$00\$00\$10\$00\$00\$00\$00\$00\$60\$02\$11\$1C\$34\$A1\$00\$00\$02\$04\$02\$18";;
+const T_TCP_IN_SYNACK = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$07\$00\$00\$40\$06\$F6\$37\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$00\$00\$00\$10\$01\$50\$12\$20\$00\$8E\$CB\$00\$00";;
+const T_TCP_OUT_ACK1 = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$01\$00\$00\$40\$06\$F6\$3D\$C0\$A8\$01\$9B\$C0\$A8\$01\$A6\$C1\$23\$00\$50\$00\$00\$10\$01\$00\$00\$AB\$01\$50\$10\$11\$1C\$9D\$B0\$00\$00";;
+const T_TCP_OUT_DATA = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$2E\$00\$01\$00\$00\$40\$06\$F6\$37\$C0\$A8\$01\$9B\$C0\$A8\$01\$A6\$C1\$23\$00\$50\$00\$00\$10\$01\$00\$00\$AB\$01\$50\$18\$11\$1C\$D2\$C4\$00\$00\$47\$45\$54\$20\$2F\$78";;
+const T_TCP_IN_ACK = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$08\$00\$00\$40\$06\$F6\$36\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$01\$00\$00\$10\$07\$50\$10\$20\$00\$8E\$C6\$00\$00";;
+const T_TCP_IN_DATA = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$3D\$00\$09\$00\$00\$40\$06\$F6\$20\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$01\$00\$00\$10\$07\$50\$18\$20\$00\$5B\$6F\$00\$00\$48\$54\$54\$50\$2F\$31\$2E\$30\$20\$32\$30\$30\$20\$4F\$4B\$0D\$0A\$0D\$0A\$68\$69";;
+const T_TCP_OUT_ACK2 = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$01\$00\$00\$40\$06\$F6\$3D\$C0\$A8\$01\$9B\$C0\$A8\$01\$A6\$C1\$23\$00\$50\$00\$00\$10\$07\$00\$00\$AB\$16\$50\$10\$11\$1C\$9D\$95\$00\$00";;
+const T_TCP_IN_OOO = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$2A\$00\$0A\$00\$00\$40\$06\$F6\$32\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$99\$00\$00\$10\$07\$50\$18\$20\$00\$15\$AC\$00\$00\$78\$78";;
+const T_TCP_IN_FIN = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$0B\$00\$00\$40\$06\$F6\$33\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$16\$00\$00\$10\$07\$50\$11\$20\$00\$8E\$B0\$00\$00";;
+const T_TCP_OUT_FINACK = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$01\$00\$00\$40\$06\$F6\$3D\$C0\$A8\$01\$9B\$C0\$A8\$01\$A6\$C1\$23\$00\$50\$00\$00\$10\$07\$00\$00\$AB\$17\$50\$11\$11\$1C\$9D\$93\$00\$00";;
+const T_TCP_IN_LASTACK = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$0C\$00\$00\$40\$06\$F6\$32\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$17\$00\$00\$10\$08\$50\$10\$20\$00\$8E\$AF\$00\$00";;
+
+var _t_txs = nil;;
+var _t_evs = nil;;
+
+fun _t_capture frame mac = set _t_txs = [frame mac] :: _t_txs; 0;;
+fun _t_tcp_cb conn ev data = set _t_evs = [ev data] :: _t_evs; 0;;
+
+fun _t_pop_tx name want =
+    if _t_txs == nil then t_true (strcat name ": a frame went out") 0
+    else let hd _t_txs -> [f m] in
+    (
+        set _t_txs = tl _t_txs;
+        t_eq name f want;
+        t_eq (strcat name ": to server mac") m T_SRV_MAC
+    );;
+
+fun _t_ev_head ev =
+    if _t_evs == nil then 0
+    else let hd _t_evs -> [e _] in e == ev;;
+
+fun _t_ev_head_data want =
+    if _t_evs == nil then 0
+    else let hd _t_evs -> [e d] in
+    (e == TCP_EV_DATA) && (d != nil) && (!strcmp d want);;
+
+fun _t_seq =
+    t_eq "seq_add basic" (seq_add "\$00\$00\$00\$01" 1) "\$00\$00\$00\$02";
+    t_eq "seq_add carry" (seq_add "\$00\$00\$FF\$FF" 1) "\$00\$01\$00\$00";
+    t_eq "seq_add wrap" (seq_add "\$FF\$FF\$FF\$FF" 1) "\$00\$00\$00\$00";
+    t_eq "seq_add mss" (seq_add "\$12\$34\$FA\$14" 1460) "\$12\$34\$FF\$C8";
+    0;;
+
+fun _t_http_parse =
+    let http_parse "HTTP/1.0 200 OK\13\10Content-Length: 5\13\10\13\10hello" -> [st body] in
+    (
+        t_int "http_parse status" st 200;
+        t_eq "http_parse body" body "hello"
+    );
+    let http_parse "garbage" -> [st2 _] in
+    t_int "http_parse garbage" st2 (-1);;
+
+fun _t_tcp_session =
+    set _tcp_send_hook = #_t_capture;
+    set _tcp_lport_next = 0xC123;
+    let tcp_connect T_SRV_IP 80 #_t_tcp_cb -> c in
+    (
+        t_int "connect waits for arp" c.tcp_state TCP_ARP_WAIT;
+
+        // Determinize the ISS, then release the handshake via the cache.
+        set c.tcp_snd_nxt = "\$00\$00\$10\$00";
+        _arp_cache_put T_SRV_IP T_SRV_MAC;
+        set _t_txs = nil; set _ipv4_ident = 0;
+        _tcp_try_arp c;
+        t_int "syn sent" c.tcp_state TCP_SYN_SENT;
+        _t_pop_tx "syn frame" T_TCP_OUT_SYN;
+        t_eq "snd_nxt consumed by syn" c.tcp_snd_nxt "\$00\$00\$10\$01";
+
+        set _t_txs = nil; set _t_evs = nil; set _ipv4_ident = 0;
+        tcp_input T_TCP_IN_SYNACK T_SRV_MAC;
+        t_int "established" c.tcp_state TCP_ESTAB;
+        t_eq "rcv_nxt after synack" c.tcp_rcv_nxt "\$00\$00\$AB\$01";
+        _t_pop_tx "handshake ack" T_TCP_OUT_ACK1;
+        t_true "connected event" (_t_ev_head TCP_EV_CONNECTED);
+
+        set _t_txs = nil; set _ipv4_ident = 0;
+        t_int "send accepted" (tcp_send c "GET /x") 1;
+        _t_pop_tx "request frame" T_TCP_OUT_DATA;
+        t_true "request kept for retransmit" (c.tcp_unacked != nil);
+        t_int "second send refused in flight" (tcp_send c "nope") 0;
+
+        tcp_input T_TCP_IN_ACK T_SRV_MAC;
+        t_true "request acked" (c.tcp_unacked == nil);
+
+        set _t_txs = nil; set _t_evs = nil; set _ipv4_ident = 0;
+        tcp_input T_TCP_IN_DATA T_SRV_MAC;
+        t_true "response delivered" (_t_ev_head_data "HTTP/1.0 200 OK\13\10\13\10hi");
+        t_eq "rcv_nxt advanced" c.tcp_rcv_nxt "\$00\$00\$AB\$16";
+        _t_pop_tx "response ack" T_TCP_OUT_ACK2;
+
+        set _t_txs = nil; set _t_evs = nil; set _ipv4_ident = 0;
+        tcp_input T_TCP_IN_OOO T_SRV_MAC;
+        t_true "out of order dropped" (_t_evs == nil);
+        _t_pop_tx "dup ack restates rcv_nxt" T_TCP_OUT_ACK2;
+
+        set _t_txs = nil; set _ipv4_ident = 0;
+        tcp_input T_TCP_IN_FIN T_SRV_MAC;
+        t_int "peer fin -> last ack" c.tcp_state TCP_LAST_ACK;
+        _t_pop_tx "our fin rides the ack" T_TCP_OUT_FINACK;
+
+        set _t_evs = nil;
+        tcp_input T_TCP_IN_LASTACK T_SRV_MAC;
+        t_int "closed" c.tcp_state TCP_CLOSED;
+        t_true "closed event" (_t_ev_head TCP_EV_CLOSED);
+        t_true "connection removed" (_tcp_conns == nil);
+        set _tcp_send_hook = nil;
+        0
+    );;
+
+fun t_tcp =
+    _t_seq;
+    _t_http_parse;
+    _t_tcp_session;
+    0;;

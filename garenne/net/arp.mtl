@@ -6,19 +6,30 @@
 const ARP_OP_REQUEST = 1;;
 const ARP_OP_REPLY = 2;;
 
-var _arp_cache = nil;;  // list of [ip mac], no aging yet (G6)
+const ARP_TTL_MS = 600000;;  // entries age out after 10 minutes
+const ARP_CACHE_MAX = 8;;
 
-fun _arp_find l ip =
+var _arp_cache = nil;;  // list of [ip mac born_ms], freshest first
+
+fun _arp_find l ip now =
     if l == nil then nil
-    else let hd l -> [cip cmac] in
-    if !strcmp cip ip then cmac
-    else _arp_find (tl l) ip;;
+    else let hd l -> [cip cmac born] in
+    if (!strcmp cip ip) && ((now - born) < ARP_TTL_MS) then cmac
+    else _arp_find (tl l) ip now;;
 
-fun arp_lookup ip = _arp_find _arp_cache ip;;
+fun arp_lookup ip = _arp_find _arp_cache ip time_ms;;
 
+fun _arp_drop l ip =
+    if l == nil then nil
+    else let hd l -> [cip _ _] in
+    if !strcmp cip ip then _arp_drop (tl l) ip
+    else (hd l) :: _arp_drop (tl l) ip;;
+
+// Refresh on every sighting: drop the old entry, cons the new one,
+// keep the cache small.
 fun _arp_cache_put ip mac =
-    if (arp_lookup ip) == nil then (set _arp_cache = [ip mac] :: _arp_cache; 0)
-    else 0;;
+    set _arp_cache = list_take ([ip mac time_ms] :: (_arp_drop _arp_cache ip)) ARP_CACHE_MAX;
+    0;;
 
 fun _arp_frame op sha spa tha tpa =
     strcatlist LLC_ARP ::
@@ -40,6 +51,12 @@ fun arp_input frame macsrc =
         else nil
     )
     else nil;;
+
+// Who-has, broadcast. The answer lands in the cache via arp_input;
+// callers poll arp_lookup (tcp does, on its timer).
+fun arp_request ip =
+    netSend (_arp_frame ARP_OP_REQUEST net_mac NET_IP "\$00\$00\$00\$00\$00\$00" ip)
+        0 nil MAC_BROADCAST 0 1;;
 
 // Gratuitous request: tell the LAN our IP moved in with this MAC.
 fun arp_announce =
