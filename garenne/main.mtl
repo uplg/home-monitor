@@ -1,0 +1,29 @@
+// garenne, the rabbit's own embedded application.
+//
+// Runs inside the Metal VM of the nabgcc firmware. Served as bc.jsp by
+// clapier and fetched by the flash boot bytecode at every boot, so a bad
+// build costs a power cycle, never a brick.
+//
+// Every line of the application is ours. The VM natives are documented
+// in docs/nabaztag-mtl-abi.md.
+
+proto main 0;;
+
+#include /work/garenne/tasks.mtl
+#include /work/garenne/leds.mtl
+#include /work/garenne/id.mtl
+#include /work/garenne/net/wire.mtl
+#include /work/garenne/net/ipv4.mtl
+#include /work/garenne/net/udp.mtl
+#include /work/garenne/net/arp.mtl
+#include /work/garenne/net/icmp.mtl
+#include /work/garenne/log.mtl
+#include /work/garenne/ctl.mtl
+#include /work/garenne/net/rx.mtl
+#include /work/garenne/app.mtl
+
+fun main=
+    // The VM main loop drives the cooperative task scheduler
+    loopcb #task_scheduler;
+    leds_init;
+    garenne_init;;

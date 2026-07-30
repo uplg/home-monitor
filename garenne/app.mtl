@@ -1,0 +1,41 @@
+// The application layer: life color, heartbeat, link report.
+
+const GARENNE_COLOR = 0x7c5cff;;         // the burrow violet: link is up
+const GARENNE_COLOR_NOLINK = 0xffa000;;  // amber: radio link is down
+
+// rt2501 driver states, per the Violet wifi driver spec (vendor/violet):
+// 0 broken, 1 idle, 2 scanning, 3 connecting, 4 connected, 5 master.
+const NET_CONNECTED = 4;;
+
+fun garenne_heartbeat task =
+    // Periodic work will live here; for now it only proves the scheduler runs.
+    TaskRun;;
+
+// Every two seconds, a line on the UDP log channel: version, uptime,
+// link state. The first sign of life the Mac hears from inside the VM.
+fun garenne_pulse task =
+    log_send (strcatlist
+        "garenne " :: GARENNE_VERSION ::
+        " up=" :: (itoa garenne_uptime_s) ::
+        "s link=" :: (itoa netState) :: nil);
+    TaskRun;;
+
+// The association is inherited from the boot bytecode (bc.jsp arrived
+// over it); this watch makes the base LED confess the link state.
+fun garenne_link_watch task =
+    set leds_breath_color =
+        if netState == NET_CONNECTED then GARENNE_COLOR
+        else GARENNE_COLOR_NOLINK;
+    TaskRun;;
+
+fun garenne_init =
+    set garenne_boot_ms = time_ms;
+    // The base LED breathes in our color: the rabbit is alive and ours.
+    set leds_breath_color = GARENNE_COLOR;
+    set leds_breathing = 1;
+    rx_init;
+    task_start_ex "heartbeat" 1000 #garenne_heartbeat;
+    task_start_ex "link" 500 #garenne_link_watch;
+    task_start_ex "pulse" 2000 #garenne_pulse;
+    log_send (strcat "garenne " (strcat GARENNE_VERSION " awake"));
+    0;;

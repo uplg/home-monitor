@@ -1,0 +1,104 @@
+// Golden vectors for the receive path, generated with Python. Peer is
+// the Mac (192.168.1.165, aa:bb:cc:00:11:22); we are 192.168.1.155 with
+// the simulator MAC 01:23:45:67:89:ab.
+
+const T_PEER_MAC = "\$AA\$BB\$CC\$00\$11\$22";;
+const T_PEER_IP = "\$C0\$A8\$01\$A5";;
+
+const T_ARP_REQ = "\$AA\$AA\$03\$00\$00\$00\$08\$06\$00\$01\$08\$00\$06\$04\$00\$01\$AA\$BB\$CC\$00\$11\$22\$C0\$A8\$01\$A5\$00\$00\$00\$00\$00\$00\$C0\$A8\$01\$9B";;
+const T_ARP_REPLY_WANT = "\$AA\$AA\$03\$00\$00\$00\$08\$06\$00\$01\$08\$00\$06\$04\$00\$02\$01\$23\$45\$67\$89\$AB\$C0\$A8\$01\$9B\$AA\$BB\$CC\$00\$11\$22\$C0\$A8\$01\$A5";;
+const T_ARP_OTHER = "\$AA\$AA\$03\$00\$00\$00\$08\$06\$00\$01\$08\$00\$06\$04\$00\$01\$AA\$BB\$CC\$00\$11\$22\$C0\$A8\$01\$A5\$00\$00\$00\$00\$00\$00\$C0\$A8\$01\$2A";;
+
+const T_ICMP_REQ = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$12\$34\$00\$00\$40\$01\$E4\$10\$C0\$A8\$01\$A5\$C0\$A8\$01\$9B\$08\$00\$78\$C7\$01\$02\$00\$01\$67\$61\$72\$65\$6E\$6E\$65\$70\$69\$6E\$67\$21";;
+const T_ICMP_REPLY_WANT = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$01\$00\$00\$40\$01\$F6\$43\$C0\$A8\$01\$9B\$C0\$A8\$01\$A5\$00\$00\$80\$C7\$01\$02\$00\$01\$67\$61\$72\$65\$6E\$6E\$65\$70\$69\$6E\$67\$21";;
+const T_ICMP_BAD = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$12\$34\$00\$00\$40\$01\$E4\$10\$C0\$A8\$01\$A5\$C0\$A8\$01\$9B\$08\$00\$87\$C7\$01\$02\$00\$01\$67\$61\$72\$65\$6E\$6E\$65\$70\$69\$6E\$67\$21";;
+const T_ICMP_REQ_PADDED = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$12\$34\$00\$00\$40\$01\$E4\$10\$C0\$A8\$01\$A5\$C0\$A8\$01\$9B\$08\$00\$78\$C7\$01\$02\$00\$01\$67\$61\$72\$65\$6E\$6E\$65\$70\$69\$6E\$67\$21\$DE\$AD\$BE\$EF";;
+const T_IP_BAD = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$12\$34\$00\$00\$40\$01\$1B\$10\$C0\$A8\$01\$A5\$C0\$A8\$01\$9B\$08\$00\$78\$C7\$01\$02\$00\$01\$67\$61\$72\$65\$6E\$6E\$65\$70\$69\$6E\$67\$21";;
+
+const T_CTL_COLOR_REQ = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$2D\$00\$42\$00\$00\$40\$11\$F5\$ED\$C0\$A8\$01\$A5\$C0\$A8\$01\$9B\$9C\$40\$27\$0E\$00\$19\$96\$23\$67\$72\$6E\$31\$20\$63\$6F\$6C\$6F\$72\$20\$37\$63\$35\$63\$66\$66";;
+const T_CTL_COLOR_REPLY_WANT = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$1E\$00\$01\$00\$00\$40\$11\$F6\$3D\$C0\$A8\$01\$9B\$C0\$A8\$01\$A5\$27\$0E\$9C\$40\$00\$0A\$48\$8F\$6F\$6B";;
+const T_CTL_PING_REQ = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$25\$00\$43\$00\$00\$40\$11\$F5\$F4\$C0\$A8\$01\$A5\$C0\$A8\$01\$9B\$9C\$40\$27\$0E\$00\$11\$F1\$69\$67\$72\$6E\$31\$20\$70\$69\$6E\$67";;
+const T_CTL_BADSUM = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$25\$00\$43\$00\$00\$40\$11\$F5\$F4\$C0\$A8\$01\$A5\$C0\$A8\$01\$9B\$9C\$40\$27\$0E\$00\$11\$F1\$69\$67\$72\$6E\$31\$DF\$70\$69\$6E\$67";;
+
+fun _t_arp =
+    let arp_input T_ARP_REQ T_PEER_MAC -> tx in
+    (
+        t_true "arp request -> reply" (tx != nil);
+        if tx != nil then
+            let tx -> [txf txmac] in
+            (
+                t_eq "arp reply frame" txf T_ARP_REPLY_WANT;
+                t_eq "arp reply goes to peer" txmac T_PEER_MAC
+            )
+        else nil;
+        t_eq "arp cache learned the peer" (arp_lookup T_PEER_IP) T_PEER_MAC;
+        t_true "arp for another ip -> nil" ((arp_input T_ARP_OTHER T_PEER_MAC) == nil)
+    );;
+
+fun _t_icmp =
+    t_int "ipv4_valid accepts the echo request" (ipv4_valid T_ICMP_REQ) 1;
+    t_int "ipv4_valid rejects a corrupt header" (ipv4_valid T_IP_BAD) 0;
+
+    set _ipv4_ident = 0;
+    let icmp_input T_ICMP_REQ T_PEER_MAC -> tx in
+    (
+        t_true "echo request -> reply" (tx != nil);
+        if tx != nil then
+            let tx -> [txf txmac] in
+            (
+                t_eq "echo reply frame" txf T_ICMP_REPLY_WANT;
+                t_eq "echo reply goes to peer" txmac T_PEER_MAC
+            )
+        else nil
+    );
+
+    set _ipv4_ident = 0;
+    let icmp_input T_ICMP_REQ_PADDED T_PEER_MAC -> tx in
+    (
+        t_true "radio padding ignored" (tx != nil);
+        if tx != nil then
+            let tx -> [txf _] in
+            t_eq "padded request, same reply" txf T_ICMP_REPLY_WANT
+        else nil
+    );
+
+    t_true "corrupt icmp checksum -> nil" ((icmp_input T_ICMP_BAD T_PEER_MAC) == nil);;
+
+fun _t_ctl =
+    t_int "udp_valid accepts the ctl frame" (udp_valid T_CTL_COLOR_REQ) 1;
+    t_int "udp_valid rejects a corrupt checksum" (udp_valid T_CTL_BADSUM) 0;
+
+    set _ipv4_ident = 0;
+    set leds_breath_color = 0;
+    let ctl_input T_CTL_COLOR_REQ T_PEER_MAC -> tx in
+    (
+        t_true "ctl color -> reply" (tx != nil);
+        if tx != nil then
+            let tx -> [txf txmac] in
+            (
+                t_eq "ctl color reply frame" txf T_CTL_COLOR_REPLY_WANT;
+                t_eq "ctl reply goes to peer" txmac T_PEER_MAC
+            )
+        else nil;
+        t_int "ctl color applied" leds_breath_color 0x7c5cff
+    );
+
+    let ctl_input T_CTL_PING_REQ T_PEER_MAC -> tx in
+    (
+        t_true "ctl ping -> reply" (tx != nil);
+        if tx != nil then
+            let tx -> [txf _] in
+            t_true "ctl ping says ok garenne"
+                (!vstrcmp txf 36 "ok garenne " 0 11)
+        else nil
+    );
+
+    t_true "ctl wrong magic -> nil" ((ctl_input T_CTL_BADSUM T_PEER_MAC) == nil);;
+
+fun t_rx =
+    set net_mac = netMac;
+    t_eq "simulator netMac" net_mac "\$01\$23\$45\$67\$89\$AB";
+    _t_arp;
+    _t_icmp;
+    _t_ctl;
+    0;;

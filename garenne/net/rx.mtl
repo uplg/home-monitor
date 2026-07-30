@@ -1,0 +1,34 @@
+// The receive dispatcher: the single place where frames come in and
+// responses go out. Protocol modules stay pure (frame in, [txframe
+// macdst] out); this file is the only RX edge touching netCb/netSend.
+
+fun wire_rx frame macsrc =
+    let
+        if frame == nil then nil
+        else if (strlen frame) < LLC_LEN then nil
+        else let strgetword frame 6 -> ethertype in
+        if ethertype == 0x0806 then arp_input frame macsrc
+        else if ethertype == 0x0800 then
+        (
+            if !(ipv4_valid frame) then nil
+            else let ipv4_proto frame -> proto in
+            if proto == IPV4_PROTO_ICMP then icmp_input frame macsrc
+            else if proto == IPV4_PROTO_UDP then
+            (
+                if !(udp_valid frame) then nil
+                else if (udp_dport frame) == CTL_PORT then ctl_input frame macsrc
+                else nil
+            )
+            else nil
+        )
+        else nil
+    -> tx in
+    if tx == nil then 0
+    else let tx -> [txf txmac] in
+    netSend txf 0 nil txmac 0 1;;
+
+fun rx_init =
+    set net_mac = netMac;
+    netCb #wire_rx;
+    arp_announce;
+    0;;

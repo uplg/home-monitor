@@ -1,0 +1,45 @@
+// UDP: datagram builder (TX) and validation + accessors (RX).
+// RX assumes an ipv4_valid frame: UDP starts at absolute offset 28.
+
+const UDP_HDR_LEN = 8;;
+
+// A full UDP datagram (header + payload) with a real checksum over the
+// IPv4 pseudo-header. RFC 768: zero in the field means "no checksum",
+// so a computed zero is sent as 0xFFFF.
+fun udp_datagram src dst sport dport payload =
+    let strcatlist
+        (word2 sport) :: (word2 dport) ::
+        (word2 (UDP_HDR_LEN + (strlen payload))) ::
+        "\$00\$00" ::                          // checksum, patched below
+        payload :: nil
+    -> udp in
+    let chk_final
+        (netChk udp 0 nil
+        (netChk (word2 (strlen udp)) 0 2
+        (netChk "\$00\$11" 0 2               // zero + protocol 17
+        (netChk (strcat src dst) 0 8 0)))) -> chk in
+    (
+        strputword udp 6 (if chk == 0 then 0xFFFF else chk);
+        udp
+    );;
+
+fun udp_sport frame = strgetword frame 28;;
+fun udp_dport frame = strgetword frame 30;;
+
+fun udp_payload frame =
+    strsub frame 36 (((ipv4_totlen frame) - IPV4_HDR_LEN) - UDP_HDR_LEN);;
+
+// A zero checksum means "none" (accepted on a LAN); a nonzero one must
+// verify over the pseudo-header. The UDP length field must agree with
+// the IP total length.
+fun udp_valid frame =
+    let (ipv4_totlen frame) - IPV4_HDR_LEN -> seg in
+    if seg < UDP_HDR_LEN then 0
+    else if (strgetword frame 32) != seg then 0
+    else if (strgetword frame 34) == 0 then 1
+    else if (chk_final
+        (netChk frame 28 seg
+        (netChk (word2 seg) 0 2
+        (netChk "\$00\$11" 0 2
+        (netChk (strsub frame 20 8) 0 8 0))))) == 0 then 1
+    else 0;;

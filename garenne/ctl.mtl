@@ -1,0 +1,55 @@
+// The remote handle: a tiny UDP command port. LAN-only by nature,
+// gated by a magic cookie, and the worst it can do on purpose is
+// reboot — which is also the recovery path. Drive it with
+// scripts/garenne-ctl.py.
+
+const CTL_PORT = 9998;;
+const CTL_MAGIC = "grn1 ";;
+
+// The reboot native demands these two keys (checked by the VM itself,
+// vendor/nabgcc vinterp.c OPreboot) so no stray call can reboot us.
+const REBOOT_KEY1 = 0x0407FE58;;
+const REBOOT_KEY2 = 0x13FB6754;;
+
+fun _ctl_reboot_task task =
+    reboot REBOOT_KEY1 REBOOT_KEY2;
+    TaskStop;;
+
+fun _ctl_reply frame macsrc text =
+    let udp_datagram NET_IP (ipv4_src frame) CTL_PORT (udp_sport frame) text -> udp in
+    let ipv4_header IPV4_PROTO_UDP NET_IP (ipv4_src frame) (strlen udp) -> ip in
+    let strcatlist LLC_IPV4 :: ip :: udp :: nil -> tx in
+    [tx macsrc];;
+
+fun _ctl_run frame macsrc cmd =
+    if !strcmp cmd "ping" then
+        _ctl_reply frame macsrc (strcatlist
+            "ok garenne " :: GARENNE_VERSION ::
+            " up=" :: (itoa garenne_uptime_s) ::
+            "s link=" :: (itoa netState) :: nil)
+    else if !strcmp cmd "reboot" then
+    (
+        // Deferred so the ack leaves the radio before the VM dies.
+        task_start_ex "reboot" 250 #_ctl_reboot_task;
+        _ctl_reply frame macsrc "ok rebooting"
+    )
+    else if ((strlen cmd) == 12) && (!vstrcmp cmd 0 "color " 0 6) then
+    (
+        set leds_breath_color = htoi (strsub cmd 6 6);
+        _ctl_reply frame macsrc "ok"
+    )
+    else if ((strlen cmd) == 5) && (!vstrcmp cmd 0 "log " 0 4) then
+    (
+        set log_enabled = atoi (strsub cmd 4 1);
+        _ctl_reply frame macsrc "ok"
+    )
+    else _ctl_reply frame macsrc "err unknown command";;
+
+// frame is an ipv4_valid + udp_valid frame on our port. Anything not
+// wearing the magic is silently dropped.
+fun ctl_input frame macsrc =
+    let udp_payload frame -> p in
+    if (strlen p) <= (strlen CTL_MAGIC) then nil
+    else if !vstrcmp p 0 CTL_MAGIC 0 (strlen CTL_MAGIC) then
+        _ctl_run frame macsrc (strsub p (strlen CTL_MAGIC) ((strlen p) - (strlen CTL_MAGIC)))
+    else nil;;

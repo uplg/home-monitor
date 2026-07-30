@@ -1,0 +1,16 @@
+// The rabbit's voice: one-line logs broadcast as UDP to the LAN.
+// Listen with scripts/garenne-listen.py. Broadcast needs no ARP, so this
+// channel works before the rest of the stack exists — that is its point:
+// it is the printf the device build gets debugged with.
+
+const LOG_PORT = 9999;;
+
+var log_enabled = 1;;
+
+fun log_send msg =
+    if log_enabled then
+        let udp_datagram NET_IP IP_BROADCAST LOG_PORT LOG_PORT msg -> udp in
+        let ipv4_header IPV4_PROTO_UDP NET_IP IP_BROADCAST (strlen udp) -> ip in
+        // lowrate flag on: short critical frames, per the driver spec
+        netSend (strcatlist LLC_IPV4 :: ip :: udp :: nil) 0 nil MAC_BROADCAST 0 1
+    else 0;;

@@ -1,0 +1,23 @@
+// ICMP: echo reply. That is all a rabbit needs to prove it is alive.
+
+const ICMP_ECHO_REPLY = 0;;
+const ICMP_ECHO_REQUEST = 8;;
+
+// frame is an ipv4_valid frame whose proto is ICMP. Echo requests to our
+// unicast IP (not broadcast) get their reply [txframe macdst], straight
+// back to the asking MAC — no ARP round trip needed.
+fun icmp_input frame macsrc =
+    let (ipv4_totlen frame) - IPV4_HDR_LEN -> icmp_len in
+    if icmp_len < 8 then nil
+    else if (strget frame 28) != ICMP_ECHO_REQUEST then nil
+    else if (strget frame 29) != 0 then nil
+    else if (chk_final (netChk frame 28 icmp_len 0)) != 0 then nil
+    else if !strcmp (ipv4_dst frame) NET_IP then
+        let strcat "\$00\$00\$00\$00" (strsub frame 32 (icmp_len - 4)) -> icmp in
+        (
+            strputword icmp 2 (chk_final (netChk icmp 0 icmp_len 0));
+            let ipv4_header IPV4_PROTO_ICMP NET_IP (ipv4_src frame) icmp_len -> ip in
+            let strcatlist LLC_IPV4 :: ip :: icmp :: nil -> tx in
+            [tx macsrc]
+        )
+    else nil;;

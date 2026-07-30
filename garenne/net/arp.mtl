@@ -1,0 +1,47 @@
+// ARP: answer who-has for our IP, remember peers we exchange with,
+// announce ourselves at init. Frame offsets are absolute (LLC = 8
+// bytes): op@14, sender mac@16, sender ip@22, target ip@32; a full
+// packet is 36 bytes.
+
+const ARP_OP_REQUEST = 1;;
+const ARP_OP_REPLY = 2;;
+
+var _arp_cache = nil;;  // list of [ip mac], no aging yet (G6)
+
+fun _arp_find l ip =
+    if l == nil then nil
+    else let hd l -> [cip cmac] in
+    if !strcmp cip ip then cmac
+    else _arp_find (tl l) ip;;
+
+fun arp_lookup ip = _arp_find _arp_cache ip;;
+
+fun _arp_cache_put ip mac =
+    if (arp_lookup ip) == nil then (set _arp_cache = [ip mac] :: _arp_cache; 0)
+    else 0;;
+
+fun _arp_frame op sha spa tha tpa =
+    strcatlist LLC_ARP ::
+        "\$00\$01\$08\$00\$06\$04" ::  // ethernet / ipv4 / lengths 6 and 4
+        (word2 op) ::
+        sha :: spa :: tha :: tpa :: nil;;
+
+// Only packets targeting our IP concern us: cache the sender, and if it
+// is a request, return the unicast reply [txframe macdst].
+fun arp_input frame macsrc =
+    if (strlen frame) < 36 then nil
+    else if !strcmp (strsub frame 32 4) NET_IP then
+    (
+        _arp_cache_put (strsub frame 22 4) (strsub frame 16 6);
+        if (strgetword frame 14) == ARP_OP_REQUEST then
+            let strsub frame 16 6 -> peer_mac in
+            let _arp_frame ARP_OP_REPLY net_mac NET_IP peer_mac (strsub frame 22 4) -> tx in
+            [tx peer_mac]
+        else nil
+    )
+    else nil;;
+
+// Gratuitous request: tell the LAN our IP moved in with this MAC.
+fun arp_announce =
+    netSend (_arp_frame ARP_OP_REQUEST net_mac NET_IP "\$00\$00\$00\$00\$00\$00" NET_IP)
+        0 nil MAC_BROADCAST 0 1;;

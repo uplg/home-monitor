@@ -1,0 +1,68 @@
+// garenne's cooperative task scheduler, driven by the VM loop callback.
+// A task returns its next status on each run: TaskRun to keep its period,
+// TaskWait ms to reschedule, TaskStop to be removed.
+
+type TaskStatus = TaskRun | TaskWait _ | TaskSuspend | TaskStop;;
+
+type Task = [
+    task_name        // display name
+    task_f           // fun [Task] TaskStatus
+    task_status      // TaskStatus
+    task_period_ms   // nil = run on every loop tick
+    task_last_run_ms
+    task_next_run_ms
+];;
+
+var _tasks = nil;;
+
+fun _task_append e l =
+    if l == nil then e :: nil
+    else (hd l) :: _task_append e (tl l);;
+
+fun _task_remove l e =
+    if l == nil then nil
+    else if (hd l) == e then _task_remove (tl l) e
+    else (hd l) :: _task_remove (tl l) e;;
+
+fun task_start_ex name period_ms f =
+    set _tasks = _task_append
+        [task_name:name task_f:f task_status:TaskRun task_period_ms:period_ms]
+        _tasks;
+    0;;
+
+fun task_start name f =
+    task_start_ex name nil f;;
+
+fun _task_execute task =
+    let time_ms -> now in
+    if task.task_period_ms != nil then
+    (
+        if task.task_next_run_ms == nil then
+            set task.task_next_run_ms = now + task.task_period_ms;
+        if (task.task_next_run_ms - now) <= 0 then (
+            set task.task_last_run_ms = now;
+            set task.task_next_run_ms = now + task.task_period_ms;
+            call task.task_f [task]
+        ) else
+            task.task_status
+    )
+    else
+    (
+        set task.task_last_run_ms = now;
+        call task.task_f [task]
+    );;
+
+fun task_scheduler =
+    for l = _tasks; l != nil; tl l do
+        let hd l -> task in (
+            set task.task_status = match task.task_status with
+                (TaskRun -> _task_execute task) |
+                (TaskWait period_ms ->
+                    set task.task_period_ms = period_ms;
+                    set task.task_next_run_ms = time_ms + task.task_period_ms;
+                    TaskRun
+                ) |
+                (TaskSuspend -> TaskSuspend) |
+                (_ -> set _tasks = _task_remove _tasks task; TaskStop)
+            );
+    0;;

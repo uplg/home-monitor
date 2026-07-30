@@ -1,0 +1,20 @@
+// Golden vectors for the transmit path, generated with Python (struct +
+// reference internet checksum). Byte-exact or bust.
+
+fun t_wire =
+    t_eq "word2" (word2 0x1234) "\$12\$34";
+
+    // The builder increments the ident before use, so 0 becomes 1.
+    set _ipv4_ident = 0;
+    t_eq "ipv4 header, udp broadcast, 21-byte payload"
+        (ipv4_header IPV4_PROTO_UDP NET_IP IP_BROADCAST 21)
+        "\$45\$00\$00\$29\$00\$01\$00\$00\$40\$11\$B8\$80\$C0\$A8\$01\$9B\$FF\$FF\$FF\$FF";
+
+    t_eq "udp datagram, even payload"
+        (udp_datagram NET_IP IP_BROADCAST 9999 9999 "garenne golden")
+        (strcat "\$27\$0F\$27\$0F\$00\$16\$08\$C9" "garenne golden");
+
+    t_eq "udp datagram, odd payload"
+        (udp_datagram NET_IP IP_BROADCAST 9999 9999 "odd")
+        (strcat "\$27\$0F\$27\$0F\$00\$0B\$1C\$12" "odd");
+    0;;

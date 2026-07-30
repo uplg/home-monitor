@@ -1,0 +1,49 @@
+// IPv4: header builder (TX) and validation + accessors (RX).
+//
+// RX offsets are absolute in the received frame: LLC is 8 bytes, the
+// IPv4 header starts right after. Real radio frames may carry padding
+// past the IP packet, so lengths always come from the total-length
+// field, never from strlen.
+
+const IPV4_HDR_LEN = 20;;
+const IPV4_PROTO_ICMP = 1;;
+const IPV4_PROTO_TCP = 6;;
+const IPV4_PROTO_UDP = 17;;
+
+var _ipv4_ident = 0;;
+
+// A 20-byte header: no options, no fragmentation, TTL 64. src and dst
+// are 4-byte strings.
+fun ipv4_header proto src dst payload_len =
+    set _ipv4_ident = (_ipv4_ident + 1) & 0xFFFF;
+    let strcatlist
+        "\$45\$00" ::                          // version 4, IHL 5, no DSCP
+        (word2 (IPV4_HDR_LEN + payload_len)) ::
+        (word2 _ipv4_ident) ::
+        "\$00\$00" ::                          // no flags, offset 0
+        "\$40" ::                              // TTL 64
+        (ctoa proto) ::
+        "\$00\$00" ::                          // checksum, patched below
+        src :: dst :: nil
+    -> h in
+    (
+        strputword h 10 (chk_final (netChk h 0 IPV4_HDR_LEN 0));
+        h
+    );;
+
+fun ipv4_totlen frame = strgetword frame 10;;
+fun ipv4_proto frame = strget frame 17;;
+fun ipv4_src frame = strsub frame 20 4;;
+fun ipv4_dst frame = strsub frame 24 4;;
+
+// Accept: long enough, version 4 with no options (IHL 5 — options are
+// dropped, fine on a LAN), coherent total length, intact header
+// checksum, destination us or broadcast.
+fun ipv4_valid frame =
+    if (strlen frame) < 28 then 0
+    else if (strget frame 8) != 0x45 then 0
+    else if (ipv4_totlen frame) < IPV4_HDR_LEN then 0
+    else if (LLC_LEN + (ipv4_totlen frame)) > (strlen frame) then 0
+    else if (chk_final (netChk frame 8 IPV4_HDR_LEN 0)) != 0 then 0
+    else if (!strcmp (ipv4_dst frame) NET_IP) || (!strcmp (ipv4_dst frame) IP_BROADCAST) then 1
+    else 0;;

@@ -1,0 +1,29 @@
+// Wire-level building blocks shared by the whole stack.
+//
+// The radio boundary (netSend/netCb) speaks LLC/SNAP: 8 bytes
+// AA AA 03 00 00 00 + ethertype, then the ARP or IPv4 packet directly.
+// There is no Ethernet header; MACs travel as separate netSend/netCb
+// arguments. (Violet wifi driver spec, vendor/violet, section 3.4.)
+
+const LLC_LEN = 8;;
+const LLC_IPV4 = "\$AA\$AA\$03\$00\$00\$00\$08\$00";;
+const LLC_ARP = "\$AA\$AA\$03\$00\$00\$00\$08\$06";;
+
+const MAC_BROADCAST = "\$FF\$FF\$FF\$FF\$FF\$FF";;
+const IP_BROADCAST = "\$FF\$FF\$FF\$FF";;
+
+// Our IP, as a 4-byte string. TEMPORARY hardcode: the Freebox holds this
+// lease for our MAC (the boot's DHCP); env.mtl (G4) then a real DHCP
+// client (G6) will retire it.
+const NET_IP = "\$C0\$A8\$01\$9B";;  // 192.168.1.155
+
+// Our MAC, cached from the netMac native at rx_init time.
+var net_mac = nil;;
+
+// 16-bit big-endian value as a 2-byte string, for strcatlist builders.
+fun word2 v = strcat (ctoa ((v >> 8) & 255)) (ctoa (v & 255));;
+
+// Finalize an internet checksum: netChk returns the running one's-
+// complement sum (chainable via its seed); the header field wants the
+// complement of it.
+fun chk_final sum = (~sum) & 0xFFFF;;

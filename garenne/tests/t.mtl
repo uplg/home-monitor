@@ -1,0 +1,43 @@
+// Minimal test harness: golden byte comparisons run in the simulator.
+// Output is plain text, grep-friendly: FAIL lines plus a final summary.
+
+var _t_pass = 0;;
+var _t_fail = 0;;
+
+fun _t_hex s i =
+    if i >= (strlen s) then ""
+    else strcat (ctoh (strget s i)) (_t_hex s (i + 1));;
+
+fun t_hex s = _t_hex s 0;;
+
+fun _t_ok = set _t_pass = _t_pass + 1; 0;;
+
+fun _t_ko name got want =
+    set _t_fail = _t_fail + 1;
+    Secho "FAIL "; Secholn name;
+    Secho "  got  "; Secholn (t_hex got);
+    Secho "  want "; Secholn (t_hex want);
+    0;;
+
+fun t_eq name got want =
+    if ((strlen got) == (strlen want)) && (!strcmp got want) then _t_ok
+    else _t_ko name got want;;
+
+fun t_int name got want =
+    if got == want then _t_ok
+    else (
+        set _t_fail = _t_fail + 1;
+        Secho "FAIL "; Secholn name;
+        Secho "  got  "; Iecholn got;
+        Secho "  want "; Iecholn want;
+        0
+    );;
+
+fun t_true name cond =
+    if cond then _t_ok
+    else (set _t_fail = _t_fail + 1; Secho "FAIL "; Secholn name; 0);;
+
+fun t_summary =
+    Secho "TESTS pass="; Iecho _t_pass;
+    Secho " fail="; Iecholn _t_fail;
+    0;;

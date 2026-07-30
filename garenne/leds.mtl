@@ -1,0 +1,46 @@
+// garenne's own LED driver.
+//
+// The VM native is simply `led index rgb`. Five LEDs on a Nabaztag:tag,
+// bottom (base) is the one visible when the rabbit idles.
+
+const LED_NOSE = 0;;
+const LED_BODY_LEFT = 1;;
+const LED_BODY_MIDDLE = 2;;
+const LED_BODY_RIGHT = 3;;
+const LED_BASE = 4;;
+
+const RGB_BLACK = 0;;
+
+var leds_breathing = 1;;
+var leds_breath_color = 0x7c5cff;;
+var _leds_phase = 0;;
+
+// Scale each RGB channel by k/255. Channels never overlap, sums are safe.
+fun _leds_scale color k =
+    ((((color >> 16) & 255) * k / 255) << 16)
+    + ((((color >> 8) & 255) * k / 255) << 8)
+    + ((color & 255) * k / 255);;
+
+fun leds_off =
+    led LED_NOSE RGB_BLACK;
+    led LED_BODY_LEFT RGB_BLACK;
+    led LED_BODY_MIDDLE RGB_BLACK;
+    led LED_BODY_RIGHT RGB_BLACK;
+    led LED_BASE RGB_BLACK;
+    0;;
+
+// Triangle-wave breathing on the base LED. 40 ms x 8 steps over 0..511
+// gives a full breath cycle of about 2.5 s.
+fun _leds_breathe task =
+    if leds_breathing then
+        let if _leds_phase < 256 then _leds_phase else 511 - _leds_phase -> k in
+        (
+            set _leds_phase = (_leds_phase + 8) & 511;
+            led LED_BASE (_leds_scale leds_breath_color k)
+        );
+    TaskRun;;
+
+fun leds_init =
+    leds_off;
+    task_start_ex "leds" 40 #_leds_breathe;
+    0;;
