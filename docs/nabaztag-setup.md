@@ -1,14 +1,20 @@
 # Nabaztag setup
 
-This guide covers reviving a Nabaztag/tag (V2, NA-RTL-002) rabbit from scratch, installing the ServerlessNabaztag firmware, connecting it to a WPA2 WiFi network, and integrating it into Maison.
+This guide covers reviving a Nabaztag/tag (V2, NA-RTL-002) rabbit from scratch, installing the ServerlessNabaztag firmware, connecting it to a WPA2 or WPA2/WPA3 mixed-mode WiFi network, and integrating it into Maison.
 
 The firmware source and all runtime resources (Forth files, MP3s, choreographies, web UI, OpenAPI spec) are vendored in this repository as a git submodule at `vendor/ServerlessNabaztag/`. After cloning, run:
 
 ```bash
-git submodule update --init vendor/ServerlessNabaztag
+git submodule update --init vendor/ServerlessNabaztag vendor/nabgcc vendor/mtl_linux
 ```
 
 The firmware payload the rabbit downloads at boot lives in `vendor/ServerlessNabaztag/vl/`.
+
+Three git submodules are used:
+
+- `vendor/ServerlessNabaztag/` — ServerlessNabaztag Metal bytecode firmware (layer 2)
+- `vendor/nabgcc/` — nabgcc native ARM firmware (layer 1), branch `wpa2` with WPA2/WPA3 mixed-mode support
+- `vendor/mtl_linux/` — Metal language compiler (needed to build nabgcc)
 
 ## Prerequisites
 
@@ -27,13 +33,22 @@ The rabbit must be in configuration mode (blue LEDs) to change WiFi and firmware
 
 1. Unplug the rabbit from power
 2. Press and hold the head button (the large button on top of the head)
-3. While holding the button, plug the USB power cable back in
-4. Wait until all LEDs turn solid blue
-5. Release the button
+3. While holding the button, plug the USB power cable back in — the LEDs
+   turn blue immediately
+4. **Release the button within ~2-5 seconds, while the LEDs are blue.** The
+   blue stays on and the rabbit starts its config access point.
 
-The rabbit is now in configuration mode and has created a WiFi access point.
+Timing matters (verified in the boot source, `boot.0.0.0.13.mtl`): the
+button is sampled once at power-on, and holding it for **more than 7
+seconds** turns the LEDs white and drops the rabbit into its hardware test
+mode instead — where every subsequent button press cycles LED colors
+(yellow, blue, orange, cyan, magenta) while moving ears and playing sounds.
+This is easy to mistake for a bricked device. If you see white LEDs or
+color-cycling on presses, just power-cycle and redo the sequence, releasing
+earlier.
 
-If the LEDs do not turn blue, try again. Hold the button firmly before and during power-on.
+If the LEDs do not turn blue at all, hold the button firmly before and
+during power-on and try again.
 
 ## Step 2 — Connect to the rabbit's access point
 
@@ -61,7 +76,7 @@ This is the rabbit's built-in configuration page. It shows fields for:
 - **DHCP** — leave enabled unless you want to assign a static IP
 - **Violet Platform** — the firmware server URL (this is the key field)
 
-## Step 4 — Configure WiFi (WPA2)
+## Step 4 — Configure WiFi (WPA2 / WPA2+WPA3)
 
 Fill in your WiFi credentials:
 
@@ -70,7 +85,17 @@ Fill in your WiFi credentials:
 - **Encryption**: WPA or WPA2 (select the one matching your router)
 - **DHCP**: enabled (recommended)
 
-WPA2 support comes from the nabgcc wpa2 branch (vendored upstream: RedoXyde/nabgcc), which ServerlessNabaztag builds upon. The V2 hardware WiFi chip supports WPA2; it was only the original Violet firmware that was limited to WEP.
+WPA2 support comes from the nabgcc wpa2 branch (vendored at `vendor/nabgcc/`). The V2 hardware WiFi chip supports WPA2; it was only the original Violet firmware that was limited to WEP.
+
+### WPA2/WPA3 mixed-mode routers
+
+Many modern routers default to WPA2/WPA3 "transitional" or "compatibility" mode, which requires connecting clients to advertise MFP (Management Frame Protection) capability. The stock nabgcc firmware does not do this and the router rejects the association with status code 31 (ROBUST_MGMT_POLICY).
+
+The `wpa2` branch in `vendor/nabgcc/` includes a fix that declares MFPC=1 (MFP Capable) in the RSN Capabilities field of the Association Request, without implementing full PMF. This works when the router has MFPR=0 (MFP not Required), which is the case for most "compatibility" or "transitional" WPA2/WPA3 modes.
+
+If your router is set to **WPA3-only** (MFPR=1, requiring full PMF with IGTK/BIP-CMAC-128), the rabbit will not be able to connect. Switch your router to WPA2/WPA3 compatibility mode instead.
+
+To use this fix, you need to flash the patched firmware — see "Building and flashing the nabgcc firmware" below.
 
 ## Step 5 — Serve the firmware locally and configure the rabbit
 
@@ -428,12 +453,104 @@ This gives you a live Forth REPL. Type `bye` to disconnect.
 
 If you set a password in the ServerlessNabaztag web UI, the same password is required for both Web and Telnet access.
 
+## Building and flashing the nabgcc firmware
+
+The rabbit runs two firmware layers:
+
+1. **Layer 1 (native ARM, `.sim` file)** — nabgcc: C firmware with WiFi/WPA2 stack, USB driver, HTTP bootloader, and a virtual machine. This is flashed directly to the rabbit's flash memory.
+2. **Layer 2 (bytecode, `bc.jsp`)** — ServerlessNabaztag: Metal language bytecode compiled by `mtl_compiler`, downloaded by the rabbit over HTTP on each boot.
+
+The WPA2/WPA3 fix lives in layer 1 (nabgcc). You only need to rebuild and reflash nabgcc if you are modifying the native firmware (WiFi stack, association, EAPOL handshake, etc.). Layer 2 (ServerlessNabaztag) is served from `vendor/ServerlessNabaztag/vl/` and does not need recompilation.
+
+### Prerequisites
+
+- Docker (with `linux/amd64` emulation if on Apple Silicon)
+- Rust toolchain (for building `tools/mkfirmware`)
+- Git submodules initialized:
+  ```bash
+  git submodule update --init vendor/nabgcc vendor/mtl_linux
+  ```
+
+### Build with the script
+
+```bash
+scripts/build-nabgcc.sh
+```
+
+This will:
+
+1. Build the `mkfirmware` Rust tool on the host
+2. Start a Docker container (`debian:bullseye-slim`, `linux/amd64`) with `gcc-arm-none-eabi`, `g++-multilib`, and `libnewlib-arm-none-eabi`
+3. Compile the Metal boot bytecode with `mtl_compiler` (32-bit)
+4. Cross-compile nabgcc with `arm-none-eabi-gcc`
+5. Generate the `.sim` firmware file at `vendor/nabgcc-latest/Nab-wpa23.sim`
+
+For a smaller production firmware without debug logging:
+
+```bash
+scripts/build-nabgcc.sh --release
+```
+
+This disables `DEBUG_VM`, `DEBUG_AUDIO`, and `DEBUG_MAIN`, producing `Nab-wpa23-release.sim`.
+
+### Build output
+
+| File | Location | Description |
+|------|----------|-------------|
+| `Nab.bin` | `vendor/nabgcc/bin/` | Raw ARM binary (~115 KB debug, ~105 KB release) |
+| `Nab.elf` | `vendor/nabgcc/bin/` | ELF with debug symbols |
+| `Nab-wpa23.sim` | `vendor/nabgcc-latest/` | Encrypted firmware ready to flash (~230 KB) |
+
+Build artifacts in `vendor/nabgcc/bin/` and `vendor/nabgcc/obj/` are gitignored.
+
+### The .sim firmware format
+
+The `.sim` file is the format the rabbit's bootloader expects for firmware uploads. It consists of:
+
+```
+-violet- <hex-encoded-size> <hex-encoded-encrypted-bytes> -violet-
+```
+
+- The size field is 8 hex characters representing `2 * binary_size`
+- Encryption is a simple byte cipher using a lookup table, with initial key `0x47`
+- The `tools/mkfirmware` Rust binary handles this encoding (a faithful port of the original `vendor/nabgcc/utils/mkfirmware.php`)
+
+### Flash the firmware
+
+1. Put the rabbit in configuration mode (hold head button, plug in power, wait for blue LEDs)
+2. Connect to the `NabaztagXX` WiFi access point
+3. Open `http://192.168.0.1/u.htm` in a browser
+4. Upload the `.sim` file (`vendor/nabgcc-latest/Nab-wpa23.sim`)
+5. Wait for the upload to complete — the rabbit will reboot automatically
+6. Reconnect to the `NabaztagXX` AP and configure WiFi settings at `http://192.168.0.1` (see Step 3-4 above)
+
+The `/u.htm` page is the rabbit's built-in firmware upload form. It is separate from the main configuration page.
+
+After flashing, you must reconfigure WiFi settings — the firmware update does not preserve them.
+
+### Pre-built firmware
+
+A pre-built `.sim` with the WPA2/WPA3 fix is committed at:
+
+```
+vendor/nabgcc-latest/Nab-wpa23.sim
+```
+
+If you do not need to modify the nabgcc source, you can flash this file directly without building.
+
+The original unmodified firmware is also available for comparison:
+
+```
+vendor/nabgcc-latest/Nab0013.01ca89.sim
+```
+
 ## Troubleshooting
 
 ### Rabbit stays in config mode (blue LEDs) after saving WiFi settings
 
 - Double-check the ESSID is exactly right (case-sensitive, no trailing spaces)
 - Verify your network is 2.4 GHz — the rabbit does not support 5 GHz
+- If your router uses WPA2/WPA3 mixed mode, you need the patched nabgcc firmware (see "Building and flashing the nabgcc firmware" above)
 - Try WPA instead of WPA2 if your router supports both
 - Power-cycle the rabbit (unplug, wait 5 seconds, replug without holding the button)
 
@@ -472,3 +589,13 @@ If you set a password in the ServerlessNabaztag web UI, the same password is req
 ### Re-entering configuration mode
 
 If you need to change WiFi settings or the firmware URL later, repeat the config mode entry from Step 1 (unplug, hold button, replug, wait for blue LEDs).
+
+### WiFi association fails with status 31 (ROBUST_MGMT_POLICY)
+
+This means the router requires MFP (Protected Management Frames) capability and the rabbit's firmware is not advertising it. This happens with WPA2/WPA3 mixed-mode routers.
+
+Fix: flash the patched nabgcc firmware from `vendor/nabgcc-latest/Nab-wpa23.sim` (see "Building and flashing the nabgcc firmware" above).
+
+If the problem persists after flashing, check your router settings:
+- Switch to "WPA2/WPA3 Compatibility" or "Transitional" mode (not WPA3-only)
+- Ensure MFPR (MFP Required) is disabled — the rabbit declares MFP Capable but does not implement full PMF
