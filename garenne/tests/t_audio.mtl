@@ -1,0 +1,90 @@
+// G7b: the http streaming mode and the audio queue, on their pure
+// cores (the codec natives do not exist in the simulator; the seams
+// pretend the codec swallows everything).
+
+var _t_astream = nil;;
+var _t_adone = nil;;
+
+fun _t_a_chunk d = set _t_astream = d :: _t_astream; 0;;
+fun _t_a_done st = set _t_adone = st; 0;;
+
+fun _t_a_conn req =
+    [tcp_state:TCP_ESTAB tcp_rip:T_CLI_IP tcp_rport:80 tcp_lport:0xC001
+     tcp_rmac:T_CLI_MAC tcp_snd_nxt:"\$00\$00\$00\$00" tcp_rcv_nxt:"\$00\$00\$00\$00"
+     tcp_unacked:nil tcp_sent_ms:0 tcp_retries:0 tcp_cb:nil tcp_user:req
+     tcp_txq:nil tcp_close_after:0];;
+
+fun _t_astream_all = strcatlist (_http_rev _t_astream nil);;
+
+fun _t_http_stream =
+    set _t_astream = nil; set _t_adone = nil;
+    let _http_req "/x" #_t_a_chunk #_t_a_done nil -> req in
+    let _t_a_conn req -> conn in
+    (
+        _http_ev conn TCP_EV_DATA "HTTP/1.0 200 OK\13\10Content-Type: x\13\10\13\10AAA";
+        t_int "stream header parsed" req.http_status 200;
+        t_true "stream body begins" (!strcmp _t_astream_all "AAA");
+        _http_ev conn TCP_EV_DATA "BBBB";
+        t_true "stream body flows" (!strcmp _t_astream_all "AAABBBB");
+        _http_ev conn TCP_EV_CLOSED nil;
+        t_int "stream done status" _t_adone 200
+    );
+    // The blank line split across two segments must reassemble.
+    set _t_astream = nil; set _t_adone = nil;
+    let _http_req "/y" #_t_a_chunk #_t_a_done nil -> req2 in
+    let _t_a_conn req2 -> conn2 in
+    (
+        _http_ev conn2 TCP_EV_DATA "HTTP/1.0 2";
+        t_true "split header waits" (_t_astream == nil);
+        _http_ev conn2 TCP_EV_DATA "00 OK\13\10\13\10CC";
+        t_int "split header status" req2.http_status 200;
+        t_true "split header body" (!strcmp _t_astream_all "CC");
+        _http_ev conn2 TCP_EV_ERROR "reset by peer";
+        t_int "stream error reported" _t_adone (-1)
+    );;
+
+fun _t_audio_queue =
+    audio_stop;
+    set _aud_state = AUD_BUFFER;
+    _aud_chunk "abc";
+    _aud_chunk "def";
+    t_int "queue counts bytes" _aud_bytes 6;
+    t_int "small buffer keeps buffering" _aud_state AUD_BUFFER;
+    set _aud_state = AUD_PLAY;
+    _aud_cb 100;
+    t_true "drain in arrival order" (!strcmp (hd _aud_out) "def");
+    t_int "drain consumed head" _aud_bytes 3;
+    _aud_cb 100;
+    t_int "drain empties" _aud_bytes 0;
+    set _aud_eof = 1;
+    _aud_cb 100;
+    t_int "eof settles idle" _aud_state AUD_IDLE;
+    audio_stop;
+    0;;
+
+fun _t_audio_states =
+    audio_stop;
+    set _aud_state = AUD_BUFFER;
+    _aud_chunk (_t_rep "0123456789012345678901234567890123456789012345678901" 160);
+    t_int "prebuffer starts playback" _aud_state AUD_PLAY;
+    audio_stop;
+    t_int "stop settles idle" _aud_state AUD_IDLE;
+    t_int "chunk after stop dropped" (_aud_chunk "zz") 0;
+
+    set _aud_state = AUD_BUFFER;
+    _aud_chunk "tiny";
+    _aud_done 200;
+    t_int "short file plays anyway" _aud_state AUD_PLAY;
+    audio_stop;
+
+    set _aud_state = AUD_BUFFER;
+    _aud_done 404;
+    t_int "failed stream settles idle" _aud_state AUD_IDLE;
+    audio_stop;
+    0;;
+
+fun t_audio =
+    _t_http_stream;
+    _t_audio_queue;
+    _t_audio_states;
+    0;;

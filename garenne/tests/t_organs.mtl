@@ -1,0 +1,149 @@
+// G7: the button gesture machine and the ear state machine, on their
+// pure cores (the motor and button natives do not exist in the
+// simulator; the hardware edges are stubbed there).
+
+var _t_bevs = nil;;
+
+fun _t_bcb ev = set _t_bevs = ev :: _t_bevs; 0;;
+
+fun _t_btn_reset =
+    set _btn_state = 0;
+    set _t_bevs = nil;
+    set button_cb = #_t_bcb;
+    0;;
+
+fun _t_bev_is want =
+    (_t_bevs != nil) && ((hd _t_bevs) == want);;
+
+fun _t_button =
+    _t_btn_reset;
+    btn_step 1 0; btn_step 0 100; btn_step 0 400;
+    t_true "click not classified early" (_t_bevs == nil);
+    btn_step 0 650;
+    t_true "single click" (_t_bev_is BTN_EV_CLICK);
+    t_int "click resets state" _btn_state 0;
+
+    _t_btn_reset;
+    btn_step 1 0; btn_step 0 100; btn_step 1 300; btn_step 0 400;
+    t_true "double click" (_t_bev_is BTN_EV_DOUBLE);
+
+    _t_btn_reset;
+    btn_step 1 0; btn_step 1 800;
+    t_true "long not fired early" (_t_bevs == nil);
+    btn_step 1 1600;
+    t_true "long press" (_t_bev_is BTN_EV_LONG);
+    btn_step 0 1700;
+    t_int "long release resets" _btn_state 0;
+    t_true "long fires once" ((tl _t_bevs) == nil);
+    set button_cb = nil;
+    0;;
+
+fun _t_ear_mod =
+    t_int "mod in range" (ear_mod 5) 5;
+    t_int "mod wraps up" (ear_mod 20) 3;
+    t_int "mod wraps down" (ear_mod (-2)) 15;
+    0;;
+
+fun _t_ear_cal =
+    let _ear_new 0 -> e in
+    (
+        set e.ear_state = EAR_CAL;
+        _ear_cal_hole e 200; _ear_cal_hole e 205; _ear_cal_hole e 195;
+        _ear_cal_hole e 200;
+        t_true "cal still hunting" (e.ear_pos == nil);
+        t_int "cal gap samples" e.ear_gaps 4;
+        _ear_cal_hole e 380;
+        t_int "long gap is zero" e.ear_pos 0;
+        t_int "cal settles idle" e.ear_state EAR_IDLE
+    );
+    // A long-looking first gap must not calibrate: too few samples.
+    let _ear_new 1 -> e2 in
+    (
+        set e2.ear_state = EAR_CAL;
+        _ear_cal_hole e2 400;
+        t_true "early long gap ignored" (e2.ear_pos == nil)
+    );;
+
+fun _t_ear_move =
+    let _ear_new 0 -> e in
+    (
+        set e.ear_state = EAR_MOVE;
+        set e.ear_pos = 15;
+        set e.ear_target = 3;
+        set e.ear_hole_ms = 0;
+        _ear_on_holes e 2 100;
+        t_int "move wraps" e.ear_pos 0;
+        t_int "still moving" e.ear_state EAR_MOVE;
+        _ear_on_holes e 3 300;
+        t_int "arrived" e.ear_pos 3;
+        t_int "arrival stops" e.ear_state EAR_IDLE;
+        t_true "target consumed" (e.ear_target == nil)
+    );;
+
+fun _t_ear_goto =
+    set _ears = (_ear_new 0) :: (_ear_new 1) :: nil;
+    let _ear_find _ears 0 -> e in
+    (
+        // Unknown position: a goto must calibrate first.
+        t_int "goto accepted" (ears_goto 0 5) 1;
+        t_int "goto calibrates first" e.ear_state EAR_CAL;
+        t_int "goto target kept" e.ear_target 5;
+
+        // Known position: straight move, or nothing when already there.
+        set e.ear_state = EAR_IDLE; set e.ear_pos = 4; set e.ear_dirty = 0;
+        ears_goto 0 4;
+        t_int "goto same is idle" e.ear_state EAR_IDLE;
+        ears_goto 0 6;
+        t_int "goto moves" e.ear_state EAR_MOVE;
+
+        set e.ear_state = EAR_BROKEN;
+        t_int "goto broken refused" (ears_goto 0 2) 0
+    );
+    // Stall detection: driving, no holes, time passes.
+    let _ear_find _ears 1 -> e2 in
+    (
+        set e2.ear_state = EAR_MOVE; set e2.ear_pos = 0;
+        set e2.ear_target = 8; set e2.ear_hole_ms = 0;
+        _ear_tick e2 5000;
+        t_int "stall breaks the ear" e2.ear_state EAR_BROKEN
+    );
+    // Hand-turned idle ear: dirty flag plus the app callback.
+    set _ears = (_ear_new 0) :: nil;
+    let _ear_find _ears 0 -> e3 in
+    (
+        set e3.ear_state = EAR_IDLE;
+        set e3.ear_count = -2;
+        set _t_bevs = nil;
+        set ears_moved_cb = #_t_bcb;
+        _ear_tick e3 100;
+        t_int "hand move dirties" e3.ear_dirty 1;
+        t_true "hand move reported" (_t_bevs != nil);
+        set ears_moved_cb = nil
+    );
+    set _ears = nil;
+    0;;
+
+fun _t_ear_status =
+    set _ears = (_ear_new 0) :: (_ear_new 1) :: nil;
+    let _ear_find _ears 0 -> r in
+    let _ear_find _ears 1 -> l in
+    (
+        set r.ear_state = EAR_IDLE; set r.ear_pos = 3; set r.ear_dirty = 0;
+        set l.ear_state = EAR_CAL;
+        t_eq "status pos and busy" ears_status "3,~";
+        set l.ear_state = EAR_BROKEN;
+        t_eq "status broken" ears_status "3,x";
+        set r.ear_dirty = 1;
+        t_eq "status dirty" ears_status "?,x"
+    );
+    set _ears = nil;
+    0;;
+
+fun t_organs =
+    _t_button;
+    _t_ear_mod;
+    _t_ear_cal;
+    _t_ear_move;
+    _t_ear_goto;
+    _t_ear_status;
+    0;;

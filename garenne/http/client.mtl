@@ -1,8 +1,21 @@
 // HTTP GET in the rabbit dialect: one request per connection,
-// Connection: close, body read until the peer closes. Exactly the
-// contract clapier serves.
+// Connection: close. Two delivery modes over the same machinery:
+// http_get buffers the whole body and hands it over on close (small
+// documents), http_stream hands body bytes to a callback as segments
+// arrive (audio: the file plays while it downloads).
 
-type Http = [http_path http_chunks http_cb];;
+type Http = [
+    http_path
+    http_chunks      // buffered mode: body pieces, newest first
+    http_cb          // buffered mode: fun [status body] _
+    http_chunk_cb    // stream mode: fun [bytes] _, nil selects buffered
+    http_done_cb     // stream mode: fun [status] _
+    http_hdr         // stream mode: header bytes until the blank line
+    http_started     // stream mode: header parsed, body flowing
+    http_status
+];;
+
+const HTTP_HDR_MAX = 2048;;
 
 fun _http_rev l acc = if l == nil then acc else _http_rev (tl l) ((hd l) :: acc);;
 
@@ -16,26 +29,75 @@ fun http_parse full =
     if (he == nil) || (he < 0) then [(-1) ""]
     else [(atoi (strsub full 9 3)) (strsub full (he + 4) ((strlen full) - (he + 4)))];;
 
+fun _http_send_request conn req =
+    tcp_send conn (strcatlist
+        "GET " :: req.http_path :: " HTTP/1.0\13\10Host: " :: (ip_str conn.tcp_rip) ::
+        "\13\10User-Agent: garenne/" :: GARENNE_VERSION ::
+        "\13\10Connection: close\13\10\13\10" :: nil);;
+
+// Stream mode: eat header bytes until the blank line, then pass every
+// body byte straight through.
+fun _http_stream_data req data =
+    if req.http_started then (call req.http_chunk_cb [data]; 0)
+    else
+    (
+        set req.http_hdr = strcat req.http_hdr data;
+        let strfind req.http_hdr 0 "\13\10\13\10" 0 nil -> he in
+        if (he == nil) || (he < 0) then
+            (if (strlen req.http_hdr) > HTTP_HDR_MAX then (set req.http_status = (-1); 0) else 0)
+        else
+        (
+            set req.http_status = atoi (strsub req.http_hdr 9 3);
+            set req.http_started = 1;
+            let (strlen req.http_hdr) - (he + 4) -> rest in
+            (
+                if rest > 0 then (call req.http_chunk_cb [(strsub req.http_hdr (he + 4) rest)]; 0) else 0;
+                set req.http_hdr = "";
+                0
+            )
+        )
+    );;
+
 fun _http_ev conn ev data =
     let conn.tcp_user -> req in
     if ev == TCP_EV_CONNECTED then
-    (
-        tcp_send conn (strcatlist
-            "GET " :: req.http_path :: " HTTP/1.0\13\10Host: " :: (ip_str conn.tcp_rip) ::
-            "\13\10User-Agent: garenne/" :: GARENNE_VERSION ::
-            "\13\10Connection: close\13\10\13\10" :: nil);
-        0
-    )
+        (_http_send_request conn req; 0)
     else if ev == TCP_EV_DATA then
-        (set req.http_chunks = data :: req.http_chunks; 0)
+    (
+        if req.http_chunk_cb == nil then
+            (set req.http_chunks = data :: req.http_chunks; 0)
+        else _http_stream_data req data
+    )
     else if ev == TCP_EV_CLOSED then
-        let http_parse (strcatlist (_http_rev req.http_chunks nil)) -> [status body] in
-        (call req.http_cb [status body]; 0)
+    (
+        if req.http_chunk_cb == nil then
+            let http_parse (strcatlist (_http_rev req.http_chunks nil)) -> [status body] in
+            (call req.http_cb [status body]; 0)
+        else (call req.http_done_cb [req.http_status]; 0)
+    )
     else
-        (call req.http_cb [(-1) (if data == nil then "" else data)]; 0);;
+    (
+        // TCP_EV_ERROR
+        if req.http_chunk_cb == nil then
+            (call req.http_cb [(-1) (if data == nil then "" else data)]; 0)
+        else (call req.http_done_cb [(-1)]; 0)
+    );;
+
+fun _http_req path chunk_cb done_cb cb =
+    [http_path:path http_chunks:nil http_cb:cb
+     http_chunk_cb:chunk_cb http_done_cb:done_cb
+     http_hdr:"" http_started:0 http_status:(-1)];;
 
 fun http_get rip rport path cb =
-    let [http_path:path http_chunks:nil http_cb:cb] -> req in
+    let _http_req path nil nil cb -> req in
+    let tcp_connect rip rport #_http_ev -> conn in
+    (
+        set conn.tcp_user = req;
+        conn
+    );;
+
+fun http_stream rip rport path chunk_cb done_cb =
+    let _http_req path chunk_cb done_cb nil -> req in
     let tcp_connect rip rport #_http_ev -> conn in
     (
         set conn.tcp_user = req;

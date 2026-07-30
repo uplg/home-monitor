@@ -58,10 +58,15 @@ fun _hsrv_status_body =
         "\13\10ip=" :: (ip_str NET_IP) ::
         "\13\10mac=" :: (mac_str net_mac) ::
         "\13\10rx_frames=" :: (itoa stat_rx_frames) ::
+        "\13\10rx_valid=" :: (itoa stat_rx_valid) ::
         "\13\10rx_dups=" :: (itoa stat_rx_dups) ::
         "\13\10tcp_accepts=" :: (itoa stat_tcp_accepts) ::
         "\13\10tcp_retx=" :: (itoa stat_tcp_retx) ::
         "\13\10reassoc=" :: (itoa stat_reassoc) ::
+        "\13\10ears=" :: ears_status ::
+        "\13\10button=" :: (itoa button_last_ev) ::
+        "\13\10audio=" :: audio_status ::
+        "\13\10playtime_ms=" :: (itoa audio_playtime) ::
         "\13\10tasks=" :: (_hsrv_task_names _tasks) ::
         "\13\10" :: nil;;
 

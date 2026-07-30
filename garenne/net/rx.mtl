@@ -28,22 +28,34 @@ fun wire_rx frame macsrc =
         if frame == nil then nil
         else if (strlen frame) < LLC_LEN then nil
         else let strgetword frame 6 -> ethertype in
-        if ethertype == 0x0806 then arp_input frame macsrc
+        if ethertype == 0x0806 then
+        (
+            // A real ARP packet carries this fixed header; decryption
+            // garbage from a botched WPA rekey does not. Only frames
+            // that parse feed the liveness signal the watchdog trusts.
+            if ((strlen frame) >= 36) && (!vstrcmp frame 8 "\$00\$01\$08\$00\$06\$04" 0 6) then
+                set stat_rx_valid = stat_rx_valid + 1;
+            arp_input frame macsrc
+        )
         else if ethertype == 0x0800 then
         (
             if !(ipv4_valid frame) then nil
-            else if _rx_dedup_on && (rx_dedup (ipv4_src frame) (strgetword frame 12)) then
-                (set stat_rx_dups = stat_rx_dups + 1; nil)
-            else let ipv4_proto frame -> proto in
-            if proto == IPV4_PROTO_ICMP then icmp_input frame macsrc
-            else if proto == IPV4_PROTO_TCP then (tcp_input frame macsrc; nil)
-            else if proto == IPV4_PROTO_UDP then
+            else
             (
-                if !(udp_valid frame) then nil
-                else if (udp_dport frame) == CTL_PORT then ctl_input frame macsrc
+                set stat_rx_valid = stat_rx_valid + 1;
+                if _rx_dedup_on && (rx_dedup (ipv4_src frame) (strgetword frame 12)) then
+                    (set stat_rx_dups = stat_rx_dups + 1; nil)
+                else let ipv4_proto frame -> proto in
+                if proto == IPV4_PROTO_ICMP then icmp_input frame macsrc
+                else if proto == IPV4_PROTO_TCP then (tcp_input frame macsrc; nil)
+                else if proto == IPV4_PROTO_UDP then
+                (
+                    if !(udp_valid frame) then nil
+                    else if (udp_dport frame) == CTL_PORT then ctl_input frame macsrc
+                    else nil
+                )
                 else nil
             )
-            else nil
         )
         else nil
     -> tx in

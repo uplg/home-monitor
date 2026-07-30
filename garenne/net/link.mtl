@@ -104,9 +104,12 @@ fun link_reassoc =
 fun _link_watch task =
     let time_ms -> now in
     (
-        if stat_rx_frames != _link_last_rx_frames then
+        // Health is frames that PARSED, not frames delivered: a radio
+        // decrypting with a stale key still hands us garbage at a
+        // healthy-looking rate (the night of 31/07 proved it).
+        if stat_rx_valid != _link_last_rx_frames then
         (
-            set _link_last_rx_frames = stat_rx_frames;
+            set _link_last_rx_frames = stat_rx_valid;
             set _link_last_rx_ms = now;
             if _link_reassoc_fails != 0 then
             (

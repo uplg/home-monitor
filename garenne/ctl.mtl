@@ -56,6 +56,32 @@ fun _ctl_run frame macsrc cmd =
         set leds_breath_color = htoi (strsub cmd 6 6);
         _ctl_reply frame macsrc "ok"
     )
+    else if ((strlen cmd) > 5) && (!vstrcmp cmd 0 "ears " 0 5) then
+    (
+        // ears A B: both ears to absolute positions 0..16.
+        let strsub cmd 5 ((strlen cmd) - 5) -> args in
+        let strfind args 0 " " 0 nil -> sp in
+        if (sp == nil) || (sp <= 0) then _ctl_reply frame macsrc "err ears A B"
+        else
+        (
+            ears_goto 0 (atoi (strsub args 0 sp));
+            ears_goto 1 (atoi (strsub args (sp + 1) ((strlen args) - sp - 1)));
+            _ctl_reply frame macsrc "ok ears moving"
+        )
+    )
+    else if ((strlen cmd) > 5) && (!vstrcmp cmd 0 "play " 0 5) then
+    (
+        audio_play (strsub cmd 5 ((strlen cmd) - 5));
+        _ctl_reply frame macsrc "ok streaming"
+    )
+    else if !strcmp cmd "stop" then
+        (audio_stop; _ctl_reply frame macsrc "ok stopped")
+    else if ((strlen cmd) > 4) && (!vstrcmp cmd 0 "vol " 0 4) then
+    (
+        set audio_vol = atoi (strsub cmd 4 ((strlen cmd) - 4));
+        _aud_hw_vol audio_vol;
+        _ctl_reply frame macsrc "ok vol"
+    )
     else if ((strlen cmd) == 5) && (!vstrcmp cmd 0 "log " 0 4) then
     (
         set log_enabled = atoi (strsub cmd 4 1);

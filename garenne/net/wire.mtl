@@ -29,6 +29,7 @@ var net_mac = nil;;
 
 // Stack counters, surfaced by the http server's /status.
 var stat_rx_frames = 0;;
+var stat_rx_valid = 0;;  // frames that parsed: the real RX health signal
 var stat_rx_dups = 0;;
 var stat_tcp_accepts = 0;;
 var stat_tcp_retx = 0;;

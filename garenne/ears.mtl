@@ -1,0 +1,177 @@
+// The ears. Hardware contract (Violet, via the motorget/motorset
+// natives): each ear motor runs forward (1), backward (-1) or stops
+// (0); a sensor counts holes passed, cumulatively, even when the ear
+// is turned by hand. A revolution has 17 holes, evenly spaced except
+// one double-width gap: crossing it while timing the holes gives the
+// absolute position. We only ever drive forward, so the count's
+// direction is never ambiguous; worst case a move costs a revolution.
+
+const EARS_HOLES = 17;;
+const EARS_TICK_MS = 40;;
+const EARS_STALL_MS = 1500;;   // no hole while driving = jammed or broken
+const EARS_CAL_MIN_GAPS = 3;;  // gap samples needed before trusting the average
+
+const EAR_IDLE = 0;;
+const EAR_CAL = 1;;      // driving forward, hunting the double gap
+const EAR_MOVE = 2;;     // driving forward toward ear_target
+const EAR_BROKEN = 3;;
+
+type Ear = [
+    ear_n            // 0 right, 1 left
+    ear_state
+    ear_pos          // 0..16, absolute; nil until first calibration
+    ear_target       // pending destination, or nil
+    ear_dirty        // moved by hand since last calibration
+    ear_count        // last cumulative sensor value seen
+    ear_hole_ms      // when the last hole passed
+    ear_avg_ms       // smoothed gap between holes
+    ear_gaps         // gap samples seen this calibration
+];;
+
+var _ears = nil;;    // list of the two Ear records
+var ears_moved_cb = nil;;  // fun [n] _, fired when an idle ear is turned by hand
+
+// The simulator has no motor opcodes at all; the edges are stubs there
+// and the state machine is tested on its pure core.
+#ifdef SIMU
+fun _ear_hw_get n = 0;;
+fun _ear_hw_set n d = 0;;
+#else
+fun _ear_hw_get n = motorget n;;
+fun _ear_hw_set n d = motorset n d;;
+#endif
+
+// The language has no modulo operator; positions wrap by hand.
+fun ear_mod v =
+    if v < 0 then ear_mod (v + EARS_HOLES)
+    else if v >= EARS_HOLES then ear_mod (v - EARS_HOLES)
+    else v;;
+
+fun _ear_find l n =
+    if l == nil then nil
+    else let hd l -> e in
+    if e.ear_n == n then e else _ear_find (tl l) n;;
+
+fun _ear_start_cal e =
+    set e.ear_state = EAR_CAL;
+    set e.ear_gaps = 0;
+    set e.ear_avg_ms = nil;
+    set e.ear_hole_ms = time_ms;
+    _ear_hw_set e.ear_n 1;
+    0;;
+
+fun _ear_arrive e =
+    _ear_hw_set e.ear_n 0;
+    set e.ear_state = EAR_IDLE;
+    set e.ear_target = nil;
+    log_send (strcatlist "ear " :: (itoa e.ear_n) :: " at " :: (itoa e.ear_pos) :: nil);
+    0;;
+
+// A hole passed while calibrating: watch the rhythm; a gap close to
+// twice the average is the reference notch, and the hole that ends it
+// is position 0. Pure in (gap, state), so the tests can drive it.
+fun _ear_cal_hole e gap =
+    if (e.ear_avg_ms != nil) && (e.ear_gaps >= EARS_CAL_MIN_GAPS)
+        && (gap > ((e.ear_avg_ms * 7) / 4)) then
+    (
+        set e.ear_pos = 0;
+        set e.ear_dirty = 0;
+        if e.ear_target == nil then _ear_arrive e
+        else if e.ear_target == 0 then _ear_arrive e
+        else (set e.ear_state = EAR_MOVE; 0)
+    )
+    else
+    (
+        set e.ear_avg_ms =
+            if e.ear_avg_ms == nil then gap
+            else ((e.ear_avg_ms * 3) + gap) / 4;
+        set e.ear_gaps = e.ear_gaps + 1;
+        0
+    );;
+
+// nholes sensor ticks arrived on a driven ear.
+fun _ear_on_holes e nholes now =
+    let now - e.ear_hole_ms -> gap in
+    (
+        set e.ear_hole_ms = now;
+        if e.ear_state == EAR_CAL then _ear_cal_hole e gap
+        else if e.ear_state == EAR_MOVE then
+        (
+            set e.ear_pos = ear_mod (e.ear_pos + nholes);
+            if e.ear_pos == e.ear_target then _ear_arrive e else 0
+        )
+        else 0
+    );;
+
+fun _ear_tick e now =
+    let _ear_hw_get e.ear_n -> c in
+    let c - e.ear_count -> delta in
+    (
+        set e.ear_count = c;
+        if (e.ear_state == EAR_CAL) || (e.ear_state == EAR_MOVE) then
+        (
+            if delta > 0 then _ear_on_holes e delta now
+            else if (now - e.ear_hole_ms) > EARS_STALL_MS then
+            (
+                // Jammed or unplugged: give up on this ear, not the app.
+                _ear_hw_set e.ear_n 0;
+                set e.ear_state = EAR_BROKEN;
+                log_send (strcat "ear broken: " (itoa e.ear_n));
+                0
+            )
+            else 0
+        )
+        else if delta > 0 then
+        (
+            // Somebody is playing with an idle ear: position is gone,
+            // and that touch is an input the app may want.
+            set e.ear_dirty = 1;
+            if ears_moved_cb != nil then call ears_moved_cb [e.ear_n] else 0
+        )
+        else 0
+    );;
+
+fun _ears_task task =
+    let time_ms -> now in
+    for l = _ears; l != nil; tl l do
+        _ear_tick (hd l) now;
+    TaskRun;;
+
+// Send an ear to an absolute position; recalibrates on the way when
+// the position is unknown or hand-touched. Returns 0 on a broken ear.
+fun ears_goto n target =
+    let _ear_find _ears n -> e in
+    if (e == nil) || (e.ear_state == EAR_BROKEN) then 0
+    else
+    (
+        set e.ear_target = ear_mod target;
+        if (e.ear_pos == nil) || e.ear_dirty then _ear_start_cal e
+        else if e.ear_pos == e.ear_target then (_ear_arrive e; 0)
+        else (set e.ear_state = EAR_MOVE; set e.ear_hole_ms = time_ms; _ear_hw_set e.ear_n 1);
+        1
+    );;
+
+fun _ear_status e =
+    if e.ear_state == EAR_BROKEN then "x"
+    else if e.ear_state != EAR_IDLE then "~"
+    else if (e.ear_pos == nil) || e.ear_dirty then "?"
+    else itoa e.ear_pos;;
+
+fun ears_status =
+    let _ear_find _ears 0 -> r in
+    let _ear_find _ears 1 -> l in
+    if (r == nil) || (l == nil) then "-"
+    else strcatlist (_ear_status r) :: "," :: (_ear_status l) :: nil;;
+
+fun _ear_new n =
+    [ear_n:n ear_state:EAR_IDLE ear_pos:nil ear_target:nil ear_dirty:0
+     ear_count:(_ear_hw_get n) ear_hole_ms:0 ear_avg_ms:nil ear_gaps:0];;
+
+// The boot ear dance: both ears find their reference notch and settle
+// at noon. Also the signature that garenne is awake.
+fun ears_init =
+    set _ears = (_ear_new 0) :: (_ear_new 1) :: nil;
+    task_start_ex "ears" EARS_TICK_MS #_ears_task;
+    ears_goto 0 0;
+    ears_goto 1 0;
+    0;;

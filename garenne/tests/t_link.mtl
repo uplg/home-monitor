@@ -84,11 +84,18 @@ fun _t_dedup =
     t_true "stale sighting forgotten"
         (!(_dedup_find (["\$C0\$A8\$01\$50" 0x1234 0] :: nil) "\$C0\$A8\$01\$50" 0x1234 5000));
     // Through the dispatcher: the same ICMP frame twice, one reply.
+    // Valid frames feed the liveness counter; garbage must not.
     set _rx_seen = nil;
     set stat_rx_dups = 0;
+    set stat_rx_valid = 0;
     wire_rx T_ICMP_REQ T_PEER_MAC;
     wire_rx T_ICMP_REQ T_PEER_MAC;
     t_int "radio duplicate filtered" stat_rx_dups 1;
+    t_int "valid frames counted" stat_rx_valid 2;
+    wire_rx T_IP_BAD T_PEER_MAC;
+    t_int "garbage not counted alive" stat_rx_valid 2;
+    wire_rx T_ARP_REQ T_PEER_MAC;
+    t_int "arp counts alive" stat_rx_valid 3;
     0;;
 
 fun _t_reassoc =

@@ -1,0 +1,62 @@
+// The head button, classified into gestures: click, double click,
+// long press. The long press is the local recovery lever: it reboots
+// the rabbit even when the radio no longer listens (the night of the
+// dead RX taught us to keep one door that needs no network).
+
+const BTN_T_DOUBLE = 500;;   // second press must start within this
+const BTN_T_LONG = 1500;;    // held this long = long press
+const BTN_TICK_MS = 50;;
+
+const BTN_EV_CLICK = 1;;
+const BTN_EV_DOUBLE = 2;;
+const BTN_EV_LONG = 3;;
+
+// Machine states: 0 idle, 1 first press down, 2 released once (double
+// window open), 3 second press down, 4 long fired (waiting release).
+var _btn_state = 0;;
+var _btn_since = 0;;
+var button_cb = nil;;   // fun [ev] _, wired by the app
+var button_last_ev = 0;;
+
+#ifdef SIMU
+fun _btn_hw = 0;;
+#else
+fun _btn_hw = button2;;
+#endif
+
+fun _btn_fire ev =
+    set button_last_ev = ev;
+    if button_cb != nil then call button_cb [ev] else 0;;
+
+// One poll step, pure in (pressed, now): returns nothing but drives
+// _btn_state/_btn_since and fires events. Separated from the task so
+// the tests can replay timed sequences.
+fun btn_step pressed now =
+    if _btn_state == 0 then
+        (if pressed then (set _btn_state = 1; set _btn_since = now; 0) else 0)
+    else if _btn_state == 1 then
+    (
+        if !pressed then (set _btn_state = 2; set _btn_since = now; 0)
+        else if (now - _btn_since) >= BTN_T_LONG then
+            (set _btn_state = 4; _btn_fire BTN_EV_LONG; 0)
+        else 0
+    )
+    else if _btn_state == 2 then
+    (
+        if pressed then (set _btn_state = 3; set _btn_since = now; 0)
+        else if (now - _btn_since) >= BTN_T_DOUBLE then
+            (set _btn_state = 0; _btn_fire BTN_EV_CLICK; 0)
+        else 0
+    )
+    else if _btn_state == 3 then
+        (if !pressed then (set _btn_state = 0; _btn_fire BTN_EV_DOUBLE; 0) else 0)
+    else
+        (if !pressed then (set _btn_state = 0; 0) else 0);;
+
+fun _btn_task task =
+    btn_step _btn_hw time_ms;
+    TaskRun;;
+
+fun button_init =
+    task_start_ex "button" BTN_TICK_MS #_btn_task;
+    0;;
