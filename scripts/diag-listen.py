@@ -43,6 +43,14 @@ def main():
 
     while True:
         data, addr = sock.recvfrom(2048)
+        if data[:4] == b"NDC1":
+            # Deafness-campaign counters (-DDIAG_COUNTERS): one ASCII line
+            # every 2 s. Timestamp it; the wedge is diagnosed by which
+            # counters stop moving.
+            stamp = time.strftime("%H:%M:%S")
+            print(f"{stamp} {addr[0]} {data.decode('ascii', 'replace')}")
+            sys.stdout.flush()
+            continue
         if len(data) < HDR or data[:4] != MAGIC:
             continue
         seq = data[4]

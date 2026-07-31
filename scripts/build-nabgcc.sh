@@ -87,8 +87,9 @@ if [ "${RELEASE_MODE}" = true ]; then
   printf '=== Release mode: disabling debug flags ===\n'
   # Override the OPTIONS variable at the make command line level,
   # which takes precedence over the Makefile definition.
-  # An empty OPTIONS means no debug flags at all.
-  MAKE_OPTIONS_OVERRIDE='OPTIONS='
+  # Debug flags stay off; the deafness-campaign counters stay on
+  # (cheap, silent, and the whole point of the soak build).
+  MAKE_OPTIONS_OVERRIDE='OPTIONS=-DDIAG_COUNTERS'
 fi
 
 # --- Run the Docker build ---
