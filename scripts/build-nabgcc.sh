@@ -91,6 +91,12 @@ if [ "${RELEASE_MODE}" = true ]; then
   # (cheap, silent, and the whole point of the soak build).
   MAKE_OPTIONS_OVERRIDE='OPTIONS=-DDIAG_COUNTERS'
 fi
+# NABGCC_OPTIONS overrides everything: the association-diagnosis image
+# wants OPTIONS='-DDIAG_RING -DDEBUG_WIFI -DDIAG_COUNTERS'.
+if [ -n "${NABGCC_OPTIONS:-}" ]; then
+  printf '=== Custom OPTIONS: %s ===\n' "${NABGCC_OPTIONS}"
+  MAKE_OPTIONS_OVERRIDE="OPTIONS=${NABGCC_OPTIONS}"
+fi
 
 # --- Run the Docker build ---
 
@@ -121,7 +127,7 @@ docker run --rm --platform "${DOCKER_PLATFORM}" \
     xxd -i < "$BIN_FILE" >> src/bc.c && \
     printf "};\n" >> src/bc.c && \
     echo "--- Building nabgcc ---" && \
-    make -j$(nproc) '"${MAKE_OPTIONS_OVERRIDE}"'
+    make -j$(nproc) '"${MAKE_OPTIONS_OVERRIDE:+\"${MAKE_OPTIONS_OVERRIDE}\"}"'
   '
 
 BUILD_STATUS=$?
