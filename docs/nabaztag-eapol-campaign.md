@@ -261,10 +261,26 @@ base `wpa23` (the PR #10 branch) plus the linker-script fix and the
 GTK fix, with every diag reference stripped. Host vectors ALL PASS on
 the merged code, GCC 5.4 container build clean (text 109064), map
 clean (zero orphan `.bss.*`, `__bss_end__` 0x10001458 under the
-0x10002988 stack floor). Image `Nab-wpa23-gtk-bld045352.sim` packed
-from it for a diag-less soak: the fix has to hold without its own
-instrumentation before the branch is offered upstream. The PR itself
-waits for RedoXyde's answer on #10.
+0x10002988 stack floor). Flashed and proven on hardware as
+`Nab-wpa23-gtk-release-bld051859.sim`: association, unicast, and ctl
+pings answered on both 192.168.1.255 and 255.255.255.255. The PR
+itself waits for RedoXyde's answer on #10.
+
+Two flashes of the branch failed first, each with its own lesson:
+
+- The raw Makefile builds with `-DDEBUG_VM -DDEBUG_AUDIO -DDEBUG_MAIN`,
+  and on this lineage the console still goes through the blocking
+  UART FIFO (~87 us per character, the diag branch had cut that in
+  diag v4). The VM crawls, association almost never completes, and
+  the one boot that got through died before its first datagram.
+  Flash images must be built with `OPTIONS=` (empty), like
+  build-nabgcc.sh --release does.
+- This lineage kept `key_data` as a fixed 24-byte struct field where
+  the diag branch had made it flexible, so the ported GTK bounds
+  check was 24 bytes too strict and rejected every message 3/4:
+  association fine, unicast fine, broadcast deaf - the original 2006
+  symptom, reintroduced by the port. The frame-header size on this
+  branch is `sizeof(struct eapol_frame) - EAPOL_RSN_LENGTH`.
 
 Directed broadcast is no longer filtered: garenne 0.8.2 accepts the
 subnet's directed address (`NET_BCAST`, computed from the inherited
