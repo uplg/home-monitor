@@ -256,13 +256,24 @@ UDP `grn1 ping` sent to **255.255.255.255 was answered** —
 `ok garenne 0.8.1`. First broadcast frame heard by a Nabaztag on
 WPA2/CCMP since the 2006 firmware shipped.
 
+E5 status: the upstream branch **`wpa23-gtk`** is ready in the fork -
+base `wpa23` (the PR #10 branch) plus the linker-script fix and the
+GTK fix, with every diag reference stripped. Host vectors ALL PASS on
+the merged code, GCC 5.4 container build clean (text 109064), map
+clean (zero orphan `.bss.*`, `__bss_end__` 0x10001458 under the
+0x10002988 stack floor). Image `Nab-wpa23-gtk-bld045352.sim` packed
+from it for a diag-less soak: the fix has to hold without its own
+instrumentation before the branch is offered upstream. The PR itself
+waits for RedoXyde's answer on #10.
+
+Directed broadcast is no longer filtered: garenne 0.8.2 accepts the
+subnet's directed address (`NET_BCAST`, computed from the inherited
+mask) in `ipv4_valid`, and a `grn1 ping` to 192.168.1.255 was answered
+on hardware.
+
 Remaining, in no hurry: a naturally failed rekey showing `gko>0`
 followed by a clean reassociation (E3's negative path, observational);
-E5 upstreaming both the linker-script fix and the GTK fix to
-RedoXyde/nabgcc; deleting the no-op aes128 legacy API once soak time
-accumulates. Note `192.168.1.255` (directed broadcast) is filtered by
-garenne's `ipv4_valid`, only 255.255.255.255 is accepted — a one-line
-MTL change if ever wanted.
+deleting the no-op aes128 legacy API once soak time accumulates.
 
 ## Reflash discipline
 

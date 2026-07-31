@@ -26,6 +26,7 @@ def main() -> int:
         print(__doc__.strip(), file=sys.stderr)
         return 1
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.settimeout(2.0)
     sock.sendto((MAGIC + " ".join(args)).encode(), (ip, PORT))
     try:
