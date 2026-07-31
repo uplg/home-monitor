@@ -38,12 +38,13 @@ fun ipv4_dst frame = strsub frame 24 4;;
 
 // Accept: long enough, version 4 with no options (IHL 5 — options are
 // dropped, fine on a LAN), coherent total length, intact header
-// checksum, destination us or broadcast.
+// checksum, destination us or broadcast (limited or directed).
 fun ipv4_valid frame =
     if (strlen frame) < 28 then 0
     else if (strget frame 8) != 0x45 then 0
     else if (ipv4_totlen frame) < IPV4_HDR_LEN then 0
     else if (LLC_LEN + (ipv4_totlen frame)) > (strlen frame) then 0
     else if (chk_final (netChk frame 8 IPV4_HDR_LEN 0)) != 0 then 0
-    else if (!strcmp (ipv4_dst frame) NET_IP) || (!strcmp (ipv4_dst frame) IP_BROADCAST) then 1
+    else if (!strcmp (ipv4_dst frame) NET_IP) || (!strcmp (ipv4_dst frame) IP_BROADCAST)
+        || (!strcmp (ipv4_dst frame) NET_BCAST) then 1
     else 0;;

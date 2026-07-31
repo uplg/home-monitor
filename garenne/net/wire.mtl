@@ -20,9 +20,14 @@ var net_mask = nil;;
 var net_gateway = nil;;
 var net_dns = nil;;
 
-// Where clapier lives. TEMPORARY hardcode: the flash config sector
-// holds the real server field; parsing it is a later refinement.
-const CLAPIER_IP = "\$C0\$A8\$01\$A5";;  // 192.168.1.165
+// The subnet's directed-broadcast address, recomputed by env_init from
+// the inherited mask. The default matches the default lease above.
+var NET_BCAST = "\$C0\$A8\$01\$FF";;  // 192.168.1.255
+
+// Where clapier lives. The config sector's server field replaces this
+// default at link_init when it parses as a dotted quad; the hardcode
+// only covers a hostname sector (we have no DNS) or an unreadable one.
+var CLAPIER_IP = "\$C0\$A8\$01\$A5";;  // 192.168.1.165
 
 // Our MAC, cached from the netMac native at rx_init time.
 var net_mac = nil;;
@@ -51,6 +56,14 @@ fun seq_add s n =
     let ((strgetword s 2) & 0xFFFF) + (n & 0xFFFF) -> lo in
     let (strgetword s 0) + (n >> 16) + (lo >> 16) -> hi in
     strcat (word2 hi) (word2 (lo & 0xFFFF));;
+
+// Directed broadcast of a subnet: the host bits forced to ones.
+fun ip_bcast ip mask =
+    strcatlist
+        (ctoa ((strget ip 0) | ((~(strget mask 0)) & 255))) ::
+        (ctoa ((strget ip 1) | ((~(strget mask 1)) & 255))) ::
+        (ctoa ((strget ip 2) | ((~(strget mask 2)) & 255))) ::
+        (ctoa ((strget ip 3) | ((~(strget mask 3)) & 255))) :: nil;;
 
 // Dotted-quad display of a 4-byte IP, for logs and headers.
 fun ip_str ip =

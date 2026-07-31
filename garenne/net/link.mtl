@@ -150,6 +150,15 @@ fun _link_garp task =
     if netState == NET_CONNECTED then arp_announce else 0;
     TaskRun;;
 
+// The config sector's server field is where clapier really lives; the
+// wire.mtl default only survives a hostname (no DNS) or an unreadable
+// sector. Returns 1 when the sector's address was adopted.
+fun link_apply_server conf =
+    if conf == nil then 0
+    else let conf_server_ip conf -> sip in
+    if sip == nil then 0
+    else (set CLAPIER_IP = sip; 1);;
+
 // The one-line identity card for ctl conf. The PMK never leaves.
 fun link_conf_summary =
     if _link_conf == nil then "conf unread"
@@ -164,6 +173,7 @@ fun link_conf_summary =
 
 fun link_init =
     set _link_conf = conf_read;
+    link_apply_server _link_conf;
     set _link_last_rx_ms = time_ms;
     task_start_ex "watch" LINK_CHECK_MS #_link_watch;
     task_start_ex "garp" LINK_GARP_MS #_link_garp;

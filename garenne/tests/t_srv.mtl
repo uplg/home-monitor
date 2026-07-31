@@ -113,7 +113,7 @@ fun _t_hsrv_pure =
     t_eq "strip none" (_hsrv_strip_query "/status") "/status";
     t_eq "response 404 bytes"
         (hsrv_response 404 "no\13\10")
-        "HTTP/1.0 404 Not Found\13\10Server: garenne/0.8.1\13\10Content-Type: text/plain\13\10Content-Length: 4\13\10Access-Control-Allow-Origin: *\13\10Connection: close\13\10\13\10no\13\10";
+        "HTTP/1.0 404 Not Found\13\10Server: garenne/0.8.2\13\10Content-Type: text/plain\13\10Content-Length: 4\13\10Access-Control-Allow-Origin: *\13\10Connection: close\13\10\13\10no\13\10";
     _t_contains "route 404" (hsrv_route "GET" "/nope") "404 Not Found";
     _t_contains "route non-get" (hsrv_route "POST" "/status") "400 Bad Request";
     _t_contains "route query stripped" (hsrv_route "GET" "/status?x=1") "HTTP/1.0 200 OK";
@@ -195,7 +195,7 @@ fun _t_http_session =
         (
             _t_contains "http 200" resp "HTTP/1.0 200 OK";
             _t_contains "http cors" resp "Access-Control-Allow-Origin: *";
-            _t_contains "http version" resp "garenne=0.8.1";
+            _t_contains "http version" resp "garenne=0.8.2";
             _t_contains "http counters" resp "tcp_accepts=";
             _t_contains "http mac" resp "mac=0019db9c2815"
         );

@@ -4,6 +4,11 @@
 fun t_wire =
     t_eq "word2" (word2 0x1234) "\$12\$34";
 
+    t_eq "directed broadcast, /24 mask"
+        (ip_bcast "\$C0\$A8\$01\$9B" "\$FF\$FF\$FF\$00") "\$C0\$A8\$01\$FF";
+    t_eq "directed broadcast, /20 mask"
+        (ip_bcast "\$0A\$00\$12\$05" "\$FF\$FF\$F0\$00") "\$0A\$00\$1F\$FF";
+
     // The builder increments the ident before use, so 0 becomes 1.
     set _ipv4_ident = 0;
     t_eq "ipv4 header, udp broadcast, 21-byte payload"
