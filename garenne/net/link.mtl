@@ -12,6 +12,7 @@ const NET_SCANNING = 2;;
 const NET_CONNECTING = 3;;
 
 const LINK_CHECK_MS = 2000;;         // watchdog cadence
+const LINK_GARP_MS = 180000;;        // gratuitous ARP announce cadence
 const LINK_RX_PROBE_MS = 30000;;     // silence before probing starts
 const LINK_RX_DEAD_MS = 90000;;      // silence before the radio is declared dead
 const LINK_PROBE_EVERY_MS = 10000;;  // probe spacing inside the probe zone
@@ -141,6 +142,14 @@ fun _link_watch task =
         TaskRun
     );;
 
+// A failed GTK rekey can leave the radio broadcast-deaf: peers that
+// re-ARP by broadcast then lose us entirely, even though unicast still
+// works. Announcing ourselves keeps their caches warm, so reachability
+// no longer depends on the rabbit hearing a broadcast.
+fun _link_garp task =
+    if netState == NET_CONNECTED then arp_announce else 0;
+    TaskRun;;
+
 // The one-line identity card for ctl conf. The PMK never leaves.
 fun link_conf_summary =
     if _link_conf == nil then "conf unread"
@@ -157,4 +166,5 @@ fun link_init =
     set _link_conf = conf_read;
     set _link_last_rx_ms = time_ms;
     task_start_ex "watch" LINK_CHECK_MS #_link_watch;
+    task_start_ex "garp" LINK_GARP_MS #_link_garp;
     0;;
