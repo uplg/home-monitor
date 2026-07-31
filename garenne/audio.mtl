@@ -10,7 +10,27 @@
 // mark; sndVol is VS1003 attenuation, 0 loudest.
 
 const AUDIO_PREBUFFER = 8192;;   // bytes buffered before the music starts
-const AUDIO_MAX_BUF = 200000;;   // beyond this the stream is cut, not the heap
+const AUDIO_MAX_BUF = 200000;;   // hard backstop: beyond this the stream is cut
+
+// The stream connection paces itself with its receive window so the
+// half-duplex radio stays available to everyone else (/status answered
+// mid-song). Two MSS in flight outruns the codec without saturating
+// the air; past the high mark the window closes outright and the
+// download pauses while the codec digests, reopening below the low
+// mark. A file of any length now plays whole: the cap above is only
+// for a peer that ignores our window.
+const AUDIO_WND = 1072;;         // 2 x TCP_MSS
+const AUDIO_BUF_HIGH = 65536;;   // queued bytes that close the window
+const AUDIO_BUF_LOW = 32768;;    // queued bytes that reopen it
+
+// The VM's natural garbage collection triggers only when the 800 KB
+// heap is nearly full, and that giant collection landing mid-playback
+// rebooted the rabbit three times (vmem_check reboots on any shortfall,
+// vmem.c). Collected early the heap never fills: the same 706 KB
+// stream that died twice survived whole with a 3 s cadence, live data
+// never past 6%. So audio pays for its churn: one gc before the
+// stream opens, one every 3 s while the state is not idle.
+const AUDIO_GC_MS = 3000;;
 
 const AUD_IDLE = 0;;
 const AUD_BUFFER = 1;;   // stream open, waiting for the prebuffer
@@ -27,6 +47,7 @@ var _aud_eof = 0;;       // the http stream has ended
 var _aud_conn = nil;;
 var audio_vol = 40;;     // default attenuation: audible, not a siren
 var stat_audio_bytes = 0;;
+var stat_audio_pauses = 0;;  // times the stream window closed on the high mark
 
 proto _aud_cb 1;;
 
@@ -74,6 +95,12 @@ fun _aud_cb free =
         if _aud_index >= (strlen chunk) then
             (set _aud_out = tl _aud_out; set _aud_index = 0; 0)
         else 0;
+        // Drained below the low mark: reopen the stream window. Only
+        // the flag is set here; the tcp timer task sends the update.
+        if (_aud_conn != nil) && (_aud_conn.tcp_rwnd == 0)
+            && (_aud_bytes < AUDIO_BUF_LOW) then
+            tcp_set_rwnd _aud_conn AUDIO_WND
+        else 0;
         0
     );;
 
@@ -97,6 +124,14 @@ fun _aud_chunk data =
             log_send "audio: buffer cap, cutting stream";
             set _aud_eof = 1;
             if _aud_conn != nil then (tcp_close _aud_conn; set _aud_conn = nil; 0) else 0
+        )
+        else if (_aud_conn != nil) && (_aud_bytes > AUDIO_BUF_HIGH)
+            && (_aud_conn.tcp_rwnd != 0) then
+        (
+            // Far enough ahead of the codec: close the window, the
+            // radio goes quiet until the queue drains to the low mark.
+            set stat_audio_pauses = stat_audio_pauses + 1;
+            tcp_set_rwnd _aud_conn 0
         )
         else if (_aud_state == AUD_BUFFER) && (_aud_bytes >= AUDIO_PREBUFFER) then
             _aud_start_codec
@@ -128,13 +163,19 @@ fun audio_stop =
     set _aud_index = 0; set _aud_bytes = 0; set _aud_eof = 0;
     0;;
 
+fun _aud_gc_task task =
+    if _aud_state != AUD_IDLE then (gc; 0) else 0;
+    TaskRun;;
+
 // Stream a path from clapier and play it as it lands.
 fun audio_play path =
     audio_stop;
+    gc;
     set _aud_state = AUD_BUFFER;
     set _aud_conn = http_stream CLAPIER_IP 80
         (strcatlist path :: "?m=" :: (mac_str net_mac) :: nil)
         #_aud_chunk #_aud_done;
+    tcp_set_rwnd _aud_conn AUDIO_WND;
     log_send (strcat "audio: streaming " path);
     1;;
 

@@ -35,6 +35,13 @@ fun _ctl_run frame macsrc cmd =
         reboot_soon;
         _ctl_reply frame macsrc "ok rebooting"
     )
+    else if !strcmp cmd "heap" then
+        // The gc native runs a full collection and returns the live
+        // fraction of the 800 KB VM heap. Diagnostic eyes for the
+        // reboot-during-audio hunt, and a lever: calling it often keeps
+        // the natural (giant) GC from ever happening.
+        _ctl_reply frame macsrc (strcatlist
+            "ok heap " :: (itoa gc) :: "% live" :: nil)
     else if !strcmp cmd "conf" then
         // The config sector's identity card (never the PMK).
         _ctl_reply frame macsrc link_conf_summary

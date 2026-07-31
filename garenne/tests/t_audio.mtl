@@ -12,7 +12,7 @@ fun _t_a_conn req =
     [tcp_state:TCP_ESTAB tcp_rip:T_CLI_IP tcp_rport:80 tcp_lport:0xC001
      tcp_rmac:T_CLI_MAC tcp_snd_nxt:"\$00\$00\$00\$00" tcp_rcv_nxt:"\$00\$00\$00\$00"
      tcp_unacked:nil tcp_sent_ms:0 tcp_retries:0 tcp_cb:nil tcp_user:req
-     tcp_txq:nil tcp_close_after:0];;
+     tcp_txq:nil tcp_close_after:0 tcp_rwnd:TCP_WINDOW tcp_rwnd_push:0];;
 
 fun _t_astream_all = strcatlist (_http_rev _t_astream nil);;
 
@@ -83,8 +83,48 @@ fun _t_audio_states =
     audio_stop;
     0;;
 
+// The stream window duty cycle, on injected queue depths (the marks
+// are far too big to allocate in the simulator heap for real): cross
+// the high mark and the window closes once, drain under the low mark
+// and it reopens with the announcement flag armed.
+fun _t_audio_flow =
+    audio_stop;
+    set _aud_state = AUD_PLAY;
+    let _t_a_conn nil -> conn in
+    (
+        set _aud_conn = conn;
+        set conn.tcp_rwnd = AUDIO_WND;
+        set stat_audio_pauses = 0;
+
+        set _aud_bytes = AUDIO_BUF_HIGH - 5;
+        _aud_chunk "0123456789";
+        t_int "high mark closes the window" conn.tcp_rwnd 0;
+        t_int "pause counted" stat_audio_pauses 1;
+        _aud_chunk "0123456789";
+        t_int "already closed stays closed" conn.tcp_rwnd 0;
+        t_int "pause counted once" stat_audio_pauses 1;
+
+        // Drain: still far above the low mark, the window stays shut.
+        set _aud_in = nil; set _aud_out = "aaaaaaaaaa" :: nil; set _aud_index = 0;
+        set _aud_bytes = AUDIO_BUF_LOW + 100;
+        _aud_cb 100;
+        t_int "above low mark stays closed" conn.tcp_rwnd 0;
+
+        // Crossing the low mark reopens and arms the push.
+        set _aud_out = "aaaaaaaaaa" :: nil; set _aud_index = 0;
+        set _aud_bytes = AUDIO_BUF_LOW + 5;
+        set conn.tcp_rwnd_push = 0;
+        _aud_cb 100;
+        t_int "low mark reopens the window" conn.tcp_rwnd AUDIO_WND;
+        t_int "reopening armed the push" conn.tcp_rwnd_push 1;
+        set _aud_conn = nil;
+        audio_stop;
+        0
+    );;
+
 fun t_audio =
     _t_http_stream;
     _t_audio_queue;
     _t_audio_states;
+    _t_audio_flow;
     0;;

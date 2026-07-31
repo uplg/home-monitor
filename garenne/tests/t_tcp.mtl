@@ -16,7 +16,9 @@ const T_TCP_OUT_ACK2 = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$01
 const T_TCP_IN_OOO = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$2A\$00\$0A\$00\$00\$40\$06\$F6\$32\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$99\$00\$00\$10\$07\$50\$18\$20\$00\$15\$AC\$00\$00\$78\$78";;
 const T_TCP_IN_FIN = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$0B\$00\$00\$40\$06\$F6\$33\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$16\$00\$00\$10\$07\$50\$11\$20\$00\$8E\$B0\$00\$00";;
 const T_TCP_OUT_FINACK = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$01\$00\$00\$40\$06\$F6\$3D\$C0\$A8\$01\$9B\$C0\$A8\$01\$A6\$C1\$23\$00\$50\$00\$00\$10\$07\$00\$00\$AB\$17\$50\$11\$11\$1C\$9D\$93\$00\$00";;
-const T_TCP_IN_LASTACK = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$0C\$00\$00\$40\$06\$F6\$32\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$17\$00\$00\$10\$08\$50\$10\$20\$00\$8E\$AF\$00\$00";;
+// The handshake ack frame again, window 1072 instead of the default.
+const T_TCP_OUT_ACK_WND = "\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$01\$00\$00\$40\$06\$F6\$3D\$C0\$A8\$01\$9B\$C0\$A8\$01\$A6\$C1\$23\$00\$50\$00\$00\$10\$01\$00\$00\$AB\$01\$50\$10\$04\$30\$AA\$9C\$00\$00";;
+const T_TCP_IN_LASTACK ="\$AA\$AA\$03\$00\$00\$00\$08\$00\$45\$00\$00\$28\$00\$0C\$00\$00\$40\$06\$F6\$32\$C0\$A8\$01\$A6\$C0\$A8\$01\$9B\$00\$50\$C1\$23\$00\$00\$AB\$17\$00\$00\$10\$08\$50\$10\$20\$00\$8E\$AF\$00\$00";;
 
 var _t_txs = nil;;
 var _t_evs = nil;;
@@ -115,8 +117,46 @@ fun _t_tcp_session =
         0
     );;
 
+// The receive window machinery: what we set is what every segment
+// advertises (golden with checksum), shrinking is silent, growing is
+// pushed by the timer as a bare ACK, and nothing pushes before ESTAB.
+fun _t_rwnd =
+    set _tcp_send_hook = #_t_capture;
+    let [tcp_state:TCP_ESTAB tcp_rip:T_SRV_IP tcp_rport:80 tcp_lport:0xC123
+         tcp_rmac:T_SRV_MAC tcp_snd_nxt:"\$00\$00\$10\$01" tcp_rcv_nxt:"\$00\$00\$AB\$01"
+         tcp_unacked:nil tcp_sent_ms:0 tcp_retries:0 tcp_cb:nil tcp_user:nil
+         tcp_txq:nil tcp_close_after:0 tcp_rwnd:TCP_WINDOW tcp_rwnd_push:0] -> c in
+    (
+        tcp_set_rwnd c 1072;
+        t_int "rwnd shrink is silent" c.tcp_rwnd_push 0;
+        set _t_txs = nil; set _ipv4_ident = 0;
+        _tcp_send_ack c;
+        _t_pop_tx "ack advertises the set window" T_TCP_OUT_ACK_WND;
+
+        tcp_set_rwnd c 0;
+        t_int "rwnd closes to zero" c.tcp_rwnd 0;
+        t_int "rwnd close is silent" c.tcp_rwnd_push 0;
+
+        tcp_set_rwnd c 1072;
+        t_int "rwnd growth asks for a push" c.tcp_rwnd_push 1;
+        set _t_txs = nil; set _ipv4_ident = 0;
+        _tcp_tick_conn c 0;
+        _t_pop_tx "timer pushes the window update" T_TCP_OUT_ACK_WND;
+        t_int "push consumed" c.tcp_rwnd_push 0;
+
+        // Before the handshake completes the growth just waits: the
+        // handshake ack will carry it.
+        set c.tcp_state = TCP_SYN_SENT;
+        tcp_set_rwnd c 0;
+        tcp_set_rwnd c TCP_WINDOW;
+        t_int "no push before estab" c.tcp_rwnd_push 0;
+        set _tcp_send_hook = nil;
+        0
+    );;
+
 fun t_tcp =
     _t_seq;
     _t_http_parse;
     _t_tcp_session;
+    _t_rwnd;
     0;;

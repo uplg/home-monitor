@@ -58,6 +58,7 @@ fun garenne_init =
     task_start_ex "heartbeat" 1000 #garenne_heartbeat;
     task_start_ex "link" 500 #garenne_link_watch;
     task_start_ex "pulse" 2000 #garenne_pulse;
+    task_start_ex "audiogc" AUDIO_GC_MS #_aud_gc_task;
     log_send (strcatlist
         "garenne " :: GARENNE_VERSION ::
         " awake env=" :: (itoa env_inherited) ::

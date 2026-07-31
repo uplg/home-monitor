@@ -43,10 +43,18 @@ fun wire_rx frame macsrc =
             else
             (
                 set stat_rx_valid = stat_rx_valid + 1;
-                if _rx_dedup_on && (rx_dedup (ipv4_src frame) (strgetword frame 12)) then
+                let ipv4_proto frame -> proto in
+                // TCP is exempt: its sequence numbers already make it
+                // radio-dup-proof (a duplicate segment fails the seq
+                // match and is re-ACKed, a duplicate ACK is a no-op),
+                // and the peer's pure ACKs legitimately share one IP
+                // ident (RFC 6864 atomic datagrams; macOS stamps them
+                // all alike), so deduping TCP by ident eats real ACKs
+                // -- measured at ~10 retransmits per /status fetch.
+                if (proto != IPV4_PROTO_TCP) && _rx_dedup_on
+                    && (rx_dedup (ipv4_src frame) (strgetword frame 12)) then
                     (set stat_rx_dups = stat_rx_dups + 1; nil)
-                else let ipv4_proto frame -> proto in
-                if proto == IPV4_PROTO_ICMP then icmp_input frame macsrc
+                else if proto == IPV4_PROTO_ICMP then icmp_input frame macsrc
                 else if proto == IPV4_PROTO_TCP then (tcp_input frame macsrc; nil)
                 else if proto == IPV4_PROTO_UDP then
                 (
