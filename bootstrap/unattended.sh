@@ -1,5 +1,5 @@
 #!/bin/sh
-# cat-monitor Alpine headless bootstrap - unattended sys-disk installation
+# maison Alpine headless bootstrap - unattended sys-disk installation
 #
 # Based on macmpi/alpine-linux-headless-bootstrap unattended_sysdisk.sh
 # Installs Alpine in sys mode (real disk install, not diskless).
@@ -25,9 +25,9 @@ MY_BOOT="${MY_DISK}p1"
 MY_ROOT="${MY_DISK}p2"
 MY_ROOT_SIZE="$((6*1024))"
 
-APP_DIR="/opt/cat-monitor"
-SERVICE_USER="catmonitor"
-SERVICE_GROUP="catmonitor"
+APP_DIR="/opt/maison"
+SERVICE_USER="maison"
+SERVICE_GROUP="maison"
 
 ########################################################
 # Locate boot media
@@ -169,11 +169,11 @@ cat <<-SETUP > /tmp/sys-setup.sh
 	fi
 
 	# Mosquitto config
-	mkdir -p /etc/mosquitto/conf.d /etc/mosquitto/certs/cat-monitor /var/log/mosquitto
+	mkdir -p /etc/mosquitto/conf.d /etc/mosquitto/certs/maison /var/log/mosquitto
 	chown -R mosquitto:mosquitto /var/log/mosquitto 2>/dev/null || true
 
-	cat > /etc/mosquitto/conf.d/cat-monitor.conf <<'MQEOF'
-# Installed by cat-monitor unattended bootstrap
+	cat > /etc/mosquitto/conf.d/maison.conf <<'MQEOF'
+# Installed by maison unattended bootstrap
 listener 1883 0.0.0.0
 allow_anonymous true
 log_dest file /var/log/mosquitto/mosquitto.log
@@ -182,9 +182,9 @@ log_type error
 MQEOF
 
 	# Log files
-	touch /var/log/cat-monitor.log /var/log/cloudflared-cat-monitor.log
-	chown "${SERVICE_USER}:${SERVICE_GROUP}" /var/log/cat-monitor.log /var/log/cloudflared-cat-monitor.log
-	chmod 644 /var/log/cat-monitor.log /var/log/cloudflared-cat-monitor.log
+	touch /var/log/maison.log /var/log/cloudflared-maison.log
+	chown "${SERVICE_USER}:${SERVICE_GROUP}" /var/log/maison.log /var/log/cloudflared-maison.log
+	chmod 644 /var/log/maison.log /var/log/cloudflared-maison.log
 
 	# Enable services
 	rc-update add mosquitto default 2>/dev/null || true
@@ -199,15 +199,15 @@ MQEOF
 	cat > /etc/motd <<'MOTD'
 
        /\\_/\\
-      ( o.o )    cat-monitor
+      ( o.o )    maison
        > ^ <     maison
 
       Alpine Linux on Raspberry Pi 1
       --------------------------------
-      app     /opt/cat-monitor
-      logs    /var/log/cat-monitor.log
+      app     /opt/maison
+      logs    /var/log/maison.log
       mqtt    localhost:1883
-      tunnel  /var/log/cloudflared-cat-monitor.log
+      tunnel  /var/log/cloudflared-maison.log
 
 MOTD
 SETUP
@@ -249,5 +249,5 @@ umount /mnt/tmp
 umount /mnt/boot
 umount /mnt
 
-_logger "cat-monitor bootstrap complete. Rebooting into installed system."
+_logger "maison bootstrap complete. Rebooting into installed system."
 reboot

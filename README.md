@@ -39,24 +39,21 @@ Tempo recalibration workflow is documented in `docs/tempo-calibration.md`.
 ## Prerequisites
 
 - `bun` for the frontend
-- Rust and `cargo` for the backend
-- Docker only for the optional containerized frontend, Mosquitto, and the optional Cloudflare tunnel
-- a compatible Zigbee USB dongle for Zigbee support, for example a Sonoff Zigbee 3.0 USB Dongle Plus Lite / MG21 (`adapter: ember`)
+- Rust and `cargo` for the backend (`cargo-zigbuild` for the Pi cross-build)
+- a compatible Zigbee USB dongle for Zigbee support, for example a Sonoff Dongle Lite MG21 (`adapter: ember`)
 
 ## Raspberry Pi 1
 
 For Raspberry Pi 1 deployments, the intended setup is fully host-native:
 
 - run Mosquitto directly on the Pi
-- plug in the Zigbee USB coordinator; the backend drives it natively over EZSP
-- plug a compatible Zigbee USB coordinator into the Pi, for example a Sonoff MG21-based dongle
+- plug in the Zigbee USB coordinator (Sonoff MG21-based dongle); the backend drives it natively over EZSP
 - build the frontend once, then let the Rust backend serve `frontend/dist`
-- run a Rust release binary instead of `cargo run`
-- compile without Bluetooth support: `cargo build --release --manifest-path backend/Cargo.toml --no-default-features`
+- run the cross-built musl release binary (no Bluetooth: `--no-default-features`)
 - set `DISABLE_BLUETOOTH=true`
 - set `AUTH_COOKIE_SECURE=false` if the Pi is exposed only over plain HTTP on the LAN
 
-Deployment notes and host-native service files are in `docs/raspberry-pi-1.md`, `deploy/systemd/cat-monitor.service`, `deploy/systemd/cloudflared-cat-monitor.service`, and `deploy/mosquitto/cat-monitor.conf`.
+Deployment notes and host-native service files are in `docs/raspberry-pi-1.md`, `deploy/openrc/maison`, `deploy/openrc/cloudflared-maison`, and `deploy/mosquitto/maison.conf`.
 
 There is also a one-shot deployment helper for the Pi: `deploy.sh`.
 It supports `all`, `build`, `push`, `upgrade`, `start`, `stop`, `status`, and `logs`.
@@ -87,7 +84,7 @@ Main settings:
 - `AUTH_RATE_LIMIT_ATTEMPTS`: max failed login attempts per IP+username window
 - `AUTH_RATE_LIMIT_WINDOW_SECONDS`: backend login throttling window
 - `CLOUDFLARE_TUNNEL_TOKEN`: optional token for the Cloudflare tunnel profile
-- `CLOUDFLARED_PROTOCOL`: Cloudflare transport protocol, default `http2` for better compatibility behind Docker/NAT
+- `CLOUDFLARED_PROTOCOL`: Cloudflare transport protocol, default `http2` for better compatibility behind NAT
 - `CLOUDFLARE_PUBLIC_HOSTNAME`: optional stable public hostname, for example `home.example.com`
 
 ## Security notes
@@ -111,96 +108,38 @@ cp users.json.template users.json
 # copy previous argon2i hashes into this file.
 ```
 
-## Run locally
-
-Start the backend on the host:
+## Development (this machine)
 
 ```bash
-make backend
+make backend         # cargo run, backend on :3033
+make frontend        # vite dev server, proxies /api to :3033
+make test            # backend tests + frontend lint
 ```
 
-Or start it in background:
+## Deployment (Raspberry Pi 1)
+
+Everything goes through `deploy.sh`, wrapped by Make targets. `PI_HOST` is
+read from `.env`.
 
 ```bash
-make backend-start
+make deploy              # build (frontend + ARMv6 musl backend) + push + restart services
+make deploy-status       # service states, versions, URLs
+make deploy-logs         # follow logs (LOG_TARGET=stack|backend|mosquitto|cloudflared)
+make cloudflared-upgrade # rebuild latest cloudflared for ARMv6 and swap it on the Pi
 ```
 
-Start the frontend dev server:
+The Pi runs three OpenRC services: `mosquitto` (TLS :8883 for the Meross
+plugs), `maison` (the backend, which also serves the frontend), and
+`cloudflared-maison` (the tunnel, when `CLOUDFLARE_TUNNEL_TOKEN` is set in
+`.env`; set `CLOUDFLARE_PUBLIC_HOSTNAME` for the public URL).
 
-```bash
-make frontend
-```
-
-The frontend proxies `/api` to `http://localhost:3033` by default.
-
-## Docker
-
-Docker is kept only for the frontend, Mosquitto, and the optional Cloudflare tunnel.
-The Rust backend always runs directly on the host.
-
-On low-resource targets like Raspberry Pi 1, Docker should be treated as optional. The backend can now serve the built frontend directly from `frontend/dist`.
-
-For Raspberry Pi 1, the recommended production path is no Docker at all.
-
-Start frontend + Mosquitto:
-
-```bash
-docker compose up -d --build frontend mqtt
-```
-
-The frontend container proxies API requests to `host.docker.internal:${API_PORT:-3033}`.
-
-## Optional Cloudflare tunnel
-
-Set `CLOUDFLARE_TUNNEL_TOKEN` in `.env`, then run:
-
-```bash
-docker compose --profile tunnel up -d cloudflared
-```
-
-No local SSL certificates or hybrid deployment files are required.
-
-If you want a stable public URL, create a named Cloudflare Tunnel in the Cloudflare dashboard,
-attach your chosen subdomain to it, then put the tunnel token in `CLOUDFLARE_TUNNEL_TOKEN`.
-Set the same hostname in `CLOUDFLARE_PUBLIC_HOSTNAME` so `make start` prints the final URL.
-
-For Raspberry Pi 1, prefer the host-native systemd service in `deploy/systemd/cloudflared-cat-monitor.service` instead of Docker.
-
-## One-command lifecycle
-
-Start everything:
-
-```bash
-make start
-```
-
-This starts:
-
-- the Rust backend on the host
-- the frontend container
-- the Mosquitto container
-- optionally the Cloudflare tunnel container
-
-For Raspberry Pi 1, prefer systemd-managed host services instead of `make start`.
-
-Stop everything:
-
-```bash
-make stop
-```
+Full instructions are in `docs/raspberry-pi-1.md`.
 
 ## Validation
 
 - Frontend build: `bun --cwd frontend run build`
 - Backend tests: `cargo test --manifest-path backend/Cargo.toml`
 - Minimal Pi-oriented backend check: `cargo check --manifest-path backend/Cargo.toml --no-default-features`
-
-## Cross-compilation
-
-- local dev stays unchanged; the Pi flow is opt-in
-- native Pi-oriented build: `make backend-build-pi`
-- cross-build helper: `make backend-build-pi-cross`
-- full instructions are in `docs/raspberry-pi-1.md`
 
 ### Planned
 

@@ -65,7 +65,7 @@ fi
 mkdir -p "$(dirname "$OUT")"
 
 # Chrome writes a PNG; we convert to JPG afterwards.
-PNG="${TMPDIR:-/tmp}/cat-monitor-shot-$$.png"
+PNG="${TMPDIR:-/tmp}/maison-shot-$$.png"
 trap 'rm -f "$PNG"' EXIT
 rm -f "$PNG"
 

@@ -1,8 +1,8 @@
 [package]
-name = "cat-monitor-rust-backend"
+name = "maison-backend"
 version = "0.1.0"
 edition = "2021"
-default-run = "cat-monitor-rust-backend"
+default-run = "maison-backend"
 
 [features]
 default = ["bluetooth"]

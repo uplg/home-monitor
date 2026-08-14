@@ -1,12 +1,12 @@
 #!/sbin/openrc-run
 
-name="cat-monitor"
-description="cat-monitor backend"
+name="maison"
+description="maison backend"
 app_dir="@@APP_DIR@@"
 env_file="${app_dir}/.env"
-backend_bin="${app_dir}/backend/target/release/cat-monitor-rust-backend"
+backend_bin="${app_dir}/backend/target/release/maison-backend"
 pidfile="/run/${RC_SVCNAME}.pid"
-logfile="/var/log/cat-monitor.log"
+logfile="/var/log/maison.log"
 service_user="@@SERVICE_USER@@"
 service_group="@@SERVICE_GROUP@@"
 

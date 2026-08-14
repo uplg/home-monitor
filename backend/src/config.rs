@@ -29,7 +29,7 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Self {
-        let source_root = env::var("CAT_MONITOR_SOURCE_ROOT")
+        let source_root = env::var("MAISON_SOURCE_ROOT")
             .map(PathBuf::from)
             .unwrap_or_else(|_| default_source_root());
 

@@ -1,6 +1,6 @@
 # Raspberry Pi 1 deployment
 
-This repository can be prepared for a Raspberry Pi 1 Model B running Alpine Linux (`alpine-rpi-3.23.3-armhf`) by running the stack in host-native mode, without Docker and without Hue BLE.
+This repository can be prepared for a Raspberry Pi 1 Model B running Alpine Linux (`alpine-rpi-3.24.1-armhf`) by running the stack in host-native mode, without Docker and without Hue BLE.
 
 For the SD card flashing and first headless SSH bootstrapping flow on macOS, see `docs/alpine-headless-flash-macos.md` and `scripts/flash-alpine-headless-macos.sh`.
 
@@ -37,22 +37,14 @@ Build a Pi-oriented backend binary without Bluetooth support:
 cargo build --release --manifest-path backend/Cargo.toml --no-default-features
 ```
 
-If you want the Make target version:
-
-```bash
-make BACKEND_BUILD_FLAGS=--no-default-features backend-build-release
-```
-
 Copy these artifacts to the Pi:
 
-- `backend/target/release/cat-monitor-rust-backend`
+- `backend/target/release/maison-backend`
 - `frontend/dist/`
 - `.env`
-- `deploy/mosquitto/cat-monitor.conf`
-- `deploy/openrc/cat-monitor`
-- `deploy/openrc/cloudflared-cat-monitor`
-- `deploy/systemd/cat-monitor.service`
-- `deploy/systemd/cloudflared-cat-monitor.service`
+- `deploy/mosquitto/maison.conf`
+- `deploy/openrc/maison`
+- `deploy/openrc/cloudflared-maison`
 - runtime JSON files from the repo root that your installation needs
 
 ## Cross-compiling from the dev machine
@@ -71,7 +63,7 @@ rustup target add arm-unknown-linux-musleabihf
 Then run:
 
 ```bash
-make backend-build-pi-cross
+make build-pi
 ```
 
 Or use the one-shot deploy script:
@@ -104,10 +96,10 @@ That runs `scripts/build-rpi1-backend.sh`, which:
 Default artifact path:
 
 ```bash
-target/arm-unknown-linux-musleabihf/release/cat-monitor-rust-backend
+target/arm-unknown-linux-musleabihf/release/maison-backend
 ```
 
-You can still keep `make backend`, `cargo check`, and the Docker-based dev flow exactly as before.
+`make backend`, `make frontend` and `cargo check` keep working on the dev machine as before.
 
 ## Recommended `.env` values on the Pi
 
@@ -136,13 +128,13 @@ sudo apk add --no-cache mosquitto
 Install the repository config and certificates:
 
 ```bash
-sudo mkdir -p /etc/mosquitto/conf.d /etc/mosquitto/certs/cat-monitor
-sudo cp deploy/mosquitto/cat-monitor.conf /etc/mosquitto/conf.d/cat-monitor.conf
-sudo cp mosquitto/certs/ca.pem /etc/mosquitto/certs/cat-monitor/ca.pem
-sudo cp mosquitto/certs/server.pem /etc/mosquitto/certs/cat-monitor/server.pem
-sudo cp mosquitto/certs/server-key.pem /etc/mosquitto/certs/cat-monitor/server-key.pem
-sudo chown -R mosquitto:mosquitto /etc/mosquitto/certs/cat-monitor
-sudo chmod 600 /etc/mosquitto/certs/cat-monitor/server-key.pem
+sudo mkdir -p /etc/mosquitto/conf.d /etc/mosquitto/certs/maison
+sudo cp deploy/mosquitto/maison.conf /etc/mosquitto/conf.d/maison.conf
+sudo cp mosquitto/certs/ca.pem /etc/mosquitto/certs/maison/ca.pem
+sudo cp mosquitto/certs/server.pem /etc/mosquitto/certs/maison/server.pem
+sudo cp mosquitto/certs/server-key.pem /etc/mosquitto/certs/maison/server-key.pem
+sudo chown -R mosquitto:mosquitto /etc/mosquitto/certs/maison
+sudo chmod 600 /etc/mosquitto/certs/maison/server-key.pem
 sudo rc-update add mosquitto default
 sudo rc-service mosquitto restart
 ```
@@ -154,39 +146,39 @@ This keeps:
 
 ## OpenRC services
 
-The repository includes `deploy/openrc/cat-monitor` and `deploy/openrc/cloudflared-cat-monitor`.
+The repository includes `deploy/openrc/maison` and `deploy/openrc/cloudflared-maison`.
 
 The deploy script installs them automatically on Alpine. If you need to do it manually:
 
 ```bash
-sudo cp deploy/openrc/cat-monitor /etc/init.d/cat-monitor
-sudo chmod +x /etc/init.d/cat-monitor
-sudo rc-update add cat-monitor default
-sudo rc-service cat-monitor start
+sudo cp deploy/openrc/maison /etc/init.d/maison
+sudo chmod +x /etc/init.d/maison
+sudo rc-update add maison default
+sudo rc-service maison start
 ```
 
 Check logs:
 
 ```bash
-tail -f /var/log/cat-monitor.log
+tail -f /var/log/maison.log
 tail -f /var/log/mosquitto/mosquitto.log
 ```
 
 ## Optional Cloudflare Tunnel on Alpine
 
-Install `cloudflared` directly on the host, keep `CLOUDFLARE_TUNNEL_TOKEN` in `/opt/cat-monitor/.env`, then install the repository service:
+Install `cloudflared` directly on the host, keep `CLOUDFLARE_TUNNEL_TOKEN` in `/opt/maison/.env`, then install the repository service:
 
 ```bash
-sudo cp deploy/openrc/cloudflared-cat-monitor /etc/init.d/cloudflared-cat-monitor
-sudo chmod +x /etc/init.d/cloudflared-cat-monitor
-sudo rc-update add cloudflared-cat-monitor default
-sudo rc-service cloudflared-cat-monitor start
+sudo cp deploy/openrc/cloudflared-maison /etc/init.d/cloudflared-maison
+sudo chmod +x /etc/init.d/cloudflared-maison
+sudo rc-update add cloudflared-maison default
+sudo rc-service cloudflared-maison start
 ```
 
 Check logs:
 
 ```bash
-tail -f /var/log/cloudflared-cat-monitor.log
+tail -f /var/log/cloudflared-maison.log
 ```
 
 The service uses the same `.env` file as the backend and runs only when `CLOUDFLARE_TUNNEL_TOKEN` is set.

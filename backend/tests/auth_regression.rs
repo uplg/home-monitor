@@ -5,7 +5,7 @@ use axum::{
     extract::connect_info::MockConnectInfo,
     http::{Method, Request, StatusCode},
 };
-use cat_monitor_rust_backend::{auth::Claims, build_app_from_config, config::Config};
+use maison_backend::{auth::Claims, build_app_from_config, config::Config};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -60,7 +60,7 @@ async fn auth_invalid_login_returns_unauthorized() {
 #[tokio::test]
 async fn auth_successful_login_returns_ok_and_sets_cookies() {
     let temp_dir = std::env::temp_dir()
-        .join("cat-monitor-auth-tests")
+        .join("maison-auth-tests")
         .join(uuid::Uuid::new_v4().to_string());
     std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
 

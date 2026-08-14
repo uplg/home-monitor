@@ -18,7 +18,7 @@ The repository ships a `bootstrap/unattended.sh` that fully provisions the Pi at
 
 ```bash
 scripts/flash-alpine-headless-macos.sh \
-  --image ~/Downloads/alpine-rpi-3.23.3-armhf.img.xz \
+  --image ~/Downloads/alpine-rpi-3.24.1-armhf.img.xz \
   --disk disk4
 ```
 
@@ -48,7 +48,7 @@ Command-line flags always take precedence over auto-detected files.
 
 ```bash
 scripts/flash-alpine-headless-macos.sh \
-  --image ~/Downloads/alpine-rpi-3.23.3-armhf.img.xz \
+  --image ~/Downloads/alpine-rpi-3.24.1-armhf.img.xz \
   --disk disk4
 ```
 
@@ -62,7 +62,7 @@ If you want to force a specific key:
 
 ```bash
 scripts/flash-alpine-headless-macos.sh \
-  --image ~/Downloads/alpine-rpi-3.23.3-armhf.img.xz \
+  --image ~/Downloads/alpine-rpi-3.24.1-armhf.img.xz \
   --disk disk4 \
   --authorized-keys ~/.ssh/id_ed25519.pub
 ```
@@ -71,7 +71,7 @@ scripts/flash-alpine-headless-macos.sh \
 
 ```bash
 scripts/flash-alpine-headless-macos.sh \
-  --image ~/Downloads/alpine-rpi-3.23.3-armhf.img.xz \
+  --image ~/Downloads/alpine-rpi-3.24.1-armhf.img.xz \
   --disk disk4 \
   --hostname maison \
   --interfaces ./bootstrap/interfaces \
@@ -92,7 +92,7 @@ You can override the hostname with:
 
 ```bash
 scripts/flash-alpine-headless-macos.sh \
-  --image ~/Downloads/alpine-rpi-3.23.3-armhf.img.xz \
+  --image ~/Downloads/alpine-rpi-3.24.1-armhf.img.xz \
   --disk disk4 \
   --hostname maison
 ```

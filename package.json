@@ -1,15 +1,11 @@
 {
-  "name": "cat-monitor",
+  "name": "maison",
   "private": true,
-  "description": "Host-run Rust backend with Vite frontend and simple Docker helpers",
+  "description": "Maison — Rust backend + Vite frontend, deployed to a Raspberry Pi 1",
   "scripts": {
     "backend": "cargo run --manifest-path backend/Cargo.toml",
     "backend:dev": "cargo run --manifest-path backend/Cargo.toml",
     "frontend:dev": "bun --cwd frontend run dev",
-    "frontend:build": "bun --cwd frontend run build",
-    "compose:up": "docker compose up -d --build frontend mqtt",
-    "compose:down": "docker compose down",
-    "tunnel:up": "docker compose --profile tunnel up -d cloudflared",
-    "tunnel:down": "docker compose --profile tunnel stop cloudflared"
+    "frontend:build": "bun --cwd frontend run build"
   }
 }

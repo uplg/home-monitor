@@ -5,7 +5,7 @@ use axum::{
     extract::connect_info::MockConnectInfo,
     http::{Method, Request, StatusCode},
 };
-use cat_monitor_rust_backend::{auth::Claims, build_app_from_config, config::Config};
+use maison_backend::{auth::Claims, build_app_from_config, config::Config};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -110,7 +110,7 @@ async fn request_rust(app: &axum::Router, method: Method, path: &str, body: Opti
 fn test_config() -> Config {
     let source_root = workspace_root();
     let temp_root = std::env::temp_dir()
-        .join("cat-monitor-rust-broadlink-tests")
+        .join("maison-rust-broadlink-tests")
         .join(uuid::Uuid::new_v4().to_string());
     std::fs::create_dir_all(&temp_root).expect("temp test dir should be created");
 

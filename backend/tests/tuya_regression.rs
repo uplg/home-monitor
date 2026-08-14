@@ -11,7 +11,7 @@ use axum::{
     http::{Method, Request, StatusCode},
     Router,
 };
-use cat_monitor_rust_backend::{auth::Claims, build_app_from_config, config::Config};
+use maison_backend::{auth::Claims, build_app_from_config, config::Config};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -349,7 +349,7 @@ async fn refresh_fixture(name: &str, path: &str) {
 fn test_config() -> Config {
     let source_root = workspace_root();
     let temp_root = std::env::temp_dir()
-        .join("cat-monitor-rust-tests")
+        .join("maison-rust-tests")
         .join(uuid::Uuid::new_v4().to_string());
     fs::create_dir_all(&temp_root).expect("temp test dir should be created");
     let cache_fixture = fixture_path("device-cache");

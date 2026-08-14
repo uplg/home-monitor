@@ -4,7 +4,7 @@ set -euo pipefail
 TARGET="${TARGET:-arm-unknown-linux-musleabihf}"
 TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
 MANIFEST="backend/Cargo.toml"
-PACKAGE_NAME="cat-monitor-rust-backend"
+PACKAGE_NAME="maison-backend"
 DEFAULT_RUSTFLAGS="-C target-cpu=arm1176jzf-s"
 
 if ! command -v rustup >/dev/null 2>&1; then

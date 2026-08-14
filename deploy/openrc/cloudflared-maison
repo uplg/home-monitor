@@ -1,17 +1,17 @@
 #!/sbin/openrc-run
 
-name="cloudflared-cat-monitor"
-description="cat-monitor Cloudflare Tunnel"
+name="cloudflared-maison"
+description="maison Cloudflare Tunnel"
 app_dir="@@APP_DIR@@"
 env_file="${app_dir}/.env"
 pidfile="/run/${RC_SVCNAME}.pid"
-logfile="/var/log/cloudflared-cat-monitor.log"
+logfile="/var/log/cloudflared-maison.log"
 service_user="@@SERVICE_USER@@"
 service_group="@@SERVICE_GROUP@@"
 
 depend() {
 	need net
-	use dns logger cat-monitor
+	use dns logger maison
 }
 
 start_pre() {

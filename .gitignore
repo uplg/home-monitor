@@ -33,8 +33,6 @@ broadlink-codes.json
 
 # Mosquitto runtime data
 mosquitto/certs/
-mosquitto/data/
-mosquitto/log/
 
 # OS / editor
 .DS_Store

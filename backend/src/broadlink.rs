@@ -723,7 +723,7 @@ mod tests {
     #[tokio::test]
     async fn save_code_normalizes_and_persists() {
         let temp_root = std::env::temp_dir()
-            .join("cat-monitor-broadlink-tests")
+            .join("maison-broadlink-tests")
             .join(Uuid::new_v4().to_string());
         let path = temp_root.join("broadlink-codes.json");
         let climate_path = temp_root.join("climate-state.json");
@@ -754,7 +754,7 @@ mod tests {
     #[tokio::test]
     async fn climate_state_is_recorded_and_reloaded() {
         let temp_root = std::env::temp_dir()
-            .join("cat-monitor-broadlink-tests")
+            .join("maison-broadlink-tests")
             .join(Uuid::new_v4().to_string());
         let codes_path = temp_root.join("broadlink-codes.json");
         let climate_path = temp_root.join("climate-state.json");

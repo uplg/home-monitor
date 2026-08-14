@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use cat_monitor_rust_backend::app_parts_from_env;
+use maison_backend::app_parts_from_env;
 use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -65,7 +65,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cat_monitor_rust_backend=info,tower_http=warn".into()),
+                .unwrap_or_else(|_| "maison_backend=info,tower_http=warn".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

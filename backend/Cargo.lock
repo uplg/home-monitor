@@ -412,44 +412,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4964518bd3b4a8190e832886cdc0da9794f12e8e6c1613a9e90ff331c4c8724b"
 
 [[package]]
-name = "cat-monitor-rust-backend"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "ashv2",
- "async-trait",
- "axum",
- "axum-extra",
- "base64 0.23.1",
- "btleplug",
- "bytes",
- "chrono",
- "chrono-tz",
- "dotenvy",
- "ezsp",
- "futures",
- "heapless",
- "jsonwebtoken",
- "md5",
- "rbroadlink",
- "reqwest",
- "rust-async-tuyapi",
- "serde",
- "serde_json",
- "silizium",
- "tempfile",
- "thiserror 2.0.20",
- "time",
- "tokio",
- "tokio-serial",
- "tower",
- "tower-http 0.7.0",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "cc"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1695,6 +1657,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d640282b302c0bb0a2a8e0233ead9035e3bed871f0b7e81fe4a1ec829765db44"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "maison-backend"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "ashv2",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "base64 0.23.1",
+ "btleplug",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "dotenvy",
+ "ezsp",
+ "futures",
+ "heapless",
+ "jsonwebtoken",
+ "md5",
+ "rbroadlink",
+ "reqwest",
+ "rust-async-tuyapi",
+ "serde",
+ "serde_json",
+ "silizium",
+ "tempfile",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tokio-serial",
+ "tower",
+ "tower-http 0.7.0",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

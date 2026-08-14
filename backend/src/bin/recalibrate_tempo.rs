@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf};
 
-use cat_monitor_rust_backend::TempoService;
+use maison_backend::TempoService;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

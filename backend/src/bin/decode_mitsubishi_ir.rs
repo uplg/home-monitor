@@ -4,7 +4,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use cat_monitor_rust_backend::broadlink::BroadlinkCodeEntry;
+use maison_backend::broadlink::BroadlinkCodeEntry;
 use serde::Deserialize;
 
 const BROADLINK_IR_TOKEN: u8 = 0x26;

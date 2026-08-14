@@ -54,6 +54,6 @@ async fn health_handler() -> Json<HealthResponse> {
     Json(HealthResponse {
         success: true,
         status: "healthy",
-        service: "cat-monitor-rust-backend",
+        service: "maison-backend",
     })
 }

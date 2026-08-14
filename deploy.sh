@@ -4,12 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PI_HOST="${PI_HOST:-}"
 PI_PASSWORD="${PI_PASSWORD:-}"
-PI_APP_DIR="${PI_APP_DIR:-/opt/cat-monitor}"
-PI_SERVICE_USER="${PI_SERVICE_USER:-catmonitor}"
+PI_APP_DIR="${PI_APP_DIR:-/opt/maison}"
+PI_SERVICE_USER="${PI_SERVICE_USER:-maison}"
 PI_SERVICE_GROUP="${PI_SERVICE_GROUP:-${PI_SERVICE_USER}}"
 PI_ENV_FILE="${PI_ENV_FILE:-${ROOT_DIR}/.env}"
 BACKEND_TARGET="${BACKEND_TARGET:-arm-unknown-linux-musleabihf}"
-BACKEND_BIN="${ROOT_DIR}/backend/target/${BACKEND_TARGET}/release/cat-monitor-rust-backend"
+BACKEND_BIN="${ROOT_DIR}/backend/target/${BACKEND_TARGET}/release/maison-backend"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-${ROOT_DIR}/cloudflared-arm}"
 
 RUNTIME_FILES=(
@@ -44,9 +44,9 @@ Commands:
 Environment:
   PI_HOST          SSH target, required for push/upgrade/start/all/logs/status
   PI_PASSWORD      Optional SSH password used via sshpass when installed locally
-  PI_APP_DIR       Remote app directory, default /opt/cat-monitor
-  PI_SERVICE_USER  Service user on the Pi, default catmonitor
-  PI_SERVICE_GROUP Service group on the Pi, default catmonitor
+  PI_APP_DIR       Remote app directory, default /opt/maison
+  PI_SERVICE_USER  Service user on the Pi, default maison
+  PI_SERVICE_GROUP Service group on the Pi, default maison
   PI_ENV_FILE      Local env file to deploy, default ./.env
   BACKEND_TARGET   Rust target triple, default arm-unknown-linux-musleabihf
   CLOUDFLARED_BIN  Path to cross-compiled cloudflared binary, default ./cloudflared-arm
@@ -117,12 +117,6 @@ SERVICE_GROUP="$3"
 REMOTE_USER="$(id -un)"
 REMOTE_GROUP="$(id -gn)"
 
-if [ -r /etc/os-release ]; then
-  . /etc/os-release
-else
-  ID=unknown
-fi
-
 apk add --no-cache rsync
 if ! getent group "${SERVICE_GROUP}" >/dev/null 2>&1; then
   addgroup -S "${SERVICE_GROUP}"
@@ -130,12 +124,14 @@ fi
 if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
   adduser -S -D -H -h "${APP_DIR}" -G "${SERVICE_GROUP}" -s /sbin/nologin "${SERVICE_USER}"
 fi
-
+# The backend drives the Zigbee dongle over /dev/ttyUSB0 (root:dialout).
+if ! id -Gn "${SERVICE_USER}" | grep -qw dialout; then
+  addgroup "${SERVICE_USER}" dialout
+fi
 
 mkdir -p \
   "${APP_DIR}/backend/target/release" \
   "${APP_DIR}/frontend/dist" \
-  "${APP_DIR}/deploy/systemd" \
   "${APP_DIR}/deploy/openrc" \
   "${APP_DIR}/deploy/mosquitto" \
   "${APP_DIR}/mosquitto/certs" \
@@ -175,15 +171,14 @@ push_to_pi() {
   fi
 
   log "Pushing service templates and configs"
-  rsync_pi -avz "${ROOT_DIR}/deploy/systemd/cat-monitor.service" "${PI_HOST}:${PI_APP_DIR}/deploy/systemd/"
-  rsync_pi -avz "${ROOT_DIR}/deploy/systemd/cloudflared-cat-monitor.service" "${PI_HOST}:${PI_APP_DIR}/deploy/systemd/"
-  rsync_pi -avz "${ROOT_DIR}/deploy/openrc/cat-monitor" "${PI_HOST}:${PI_APP_DIR}/deploy/openrc/"
-  rsync_pi -avz "${ROOT_DIR}/deploy/openrc/cloudflared-cat-monitor" "${PI_HOST}:${PI_APP_DIR}/deploy/openrc/"
-  rsync_pi -avz "${ROOT_DIR}/deploy/mosquitto/cat-monitor.conf" "${PI_HOST}:${PI_APP_DIR}/deploy/mosquitto/"
+  rsync_pi -avz "${ROOT_DIR}/deploy/openrc/maison" "${PI_HOST}:${PI_APP_DIR}/deploy/openrc/"
+  rsync_pi -avz "${ROOT_DIR}/deploy/openrc/cloudflared-maison" "${PI_HOST}:${PI_APP_DIR}/deploy/openrc/"
+  rsync_pi -avz "${ROOT_DIR}/deploy/mosquitto/maison.conf" "${PI_HOST}:${PI_APP_DIR}/deploy/mosquitto/"
 
   if [ -d "${ROOT_DIR}/mosquitto/certs" ]; then
     log "Pushing Mosquitto certificates"
-    rsync_pi -avz "${ROOT_DIR}/mosquitto/certs/" "${PI_HOST}:${PI_APP_DIR}/mosquitto/certs/"
+    # The CA private key never needs to leave this machine.
+    rsync_pi -avz --exclude ca-key.pem "${ROOT_DIR}/mosquitto/certs/" "${PI_HOST}:${PI_APP_DIR}/mosquitto/certs/"
   else
     warn "mosquitto/certs is missing locally; TLS listener deployment may fail"
   fi
@@ -265,12 +260,6 @@ do
   fi
 done
 
-if [ -r /etc/os-release ]; then
-  . /etc/os-release
-else
-  ID=unknown
-fi
-
 apk update
 apk add --no-cache bash ca-certificates curl git mosquitto rsync
 if ! getent group "${SERVICE_GROUP}" >/dev/null 2>&1; then
@@ -280,27 +269,27 @@ if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
   adduser -S -D -H -h "${APP_DIR}" -G "${SERVICE_GROUP}" -s /sbin/nologin "${SERVICE_USER}"
 fi
 
-mkdir -p /etc/mosquitto/conf.d /etc/mosquitto/certs/cat-monitor /var/log/mosquitto /var/log
+mkdir -p /etc/mosquitto/conf.d /etc/mosquitto/certs/maison /var/log/mosquitto /var/log
 
-if [ -f "${APP_DIR}/deploy/mosquitto/cat-monitor.conf" ]; then
-  cp "${APP_DIR}/deploy/mosquitto/cat-monitor.conf" /etc/mosquitto/conf.d/cat-monitor.conf
+if [ -f "${APP_DIR}/deploy/mosquitto/maison.conf" ]; then
+  cp "${APP_DIR}/deploy/mosquitto/maison.conf" /etc/mosquitto/conf.d/maison.conf
 fi
 
 if [ -f "${APP_DIR}/mosquitto/certs/ca.pem" ]; then
-  cp "${APP_DIR}/mosquitto/certs/ca.pem" /etc/mosquitto/certs/cat-monitor/ca.pem
+  cp "${APP_DIR}/mosquitto/certs/ca.pem" /etc/mosquitto/certs/maison/ca.pem
 fi
 if [ -f "${APP_DIR}/mosquitto/certs/server.pem" ]; then
-  cp "${APP_DIR}/mosquitto/certs/server.pem" /etc/mosquitto/certs/cat-monitor/server.pem
+  cp "${APP_DIR}/mosquitto/certs/server.pem" /etc/mosquitto/certs/maison/server.pem
 fi
 if [ -f "${APP_DIR}/mosquitto/certs/server-key.pem" ]; then
-  cp "${APP_DIR}/mosquitto/certs/server-key.pem" /etc/mosquitto/certs/cat-monitor/server-key.pem
-  chmod 600 /etc/mosquitto/certs/cat-monitor/server-key.pem
+  cp "${APP_DIR}/mosquitto/certs/server-key.pem" /etc/mosquitto/certs/maison/server-key.pem
+  chmod 600 /etc/mosquitto/certs/maison/server-key.pem
 fi
 
-chown -R mosquitto:mosquitto /etc/mosquitto/certs/cat-monitor /var/log/mosquitto 2>/dev/null || true
-touch /var/log/cat-monitor.log /var/log/cloudflared-cat-monitor.log
-chown "${SERVICE_USER}:${SERVICE_GROUP}" /var/log/cat-monitor.log /var/log/cloudflared-cat-monitor.log
-chmod 644 /var/log/cat-monitor.log /var/log/cloudflared-cat-monitor.log
+chown -R mosquitto:mosquitto /etc/mosquitto/certs/maison /var/log/mosquitto 2>/dev/null || true
+touch /var/log/maison.log /var/log/cloudflared-maison.log
+chown "${SERVICE_USER}:${SERVICE_GROUP}" /var/log/maison.log /var/log/cloudflared-maison.log
+chmod 644 /var/log/maison.log /var/log/cloudflared-maison.log
 
 if ! command -v cloudflared >/dev/null 2>&1; then
   printf '%s\n' 'Warning: cloudflared is not installed on the Pi.' >&2
@@ -363,34 +352,28 @@ do
   fi
 done
 
-if [ -r /etc/os-release ]; then
-  . /etc/os-release
-else
-  ID=unknown
-fi
+sed \
+  -e "s#@@APP_DIR@@#${APP_DIR}#g" \
+  -e "s#@@SERVICE_USER@@#${SERVICE_USER}#g" \
+  -e "s#@@SERVICE_GROUP@@#${SERVICE_GROUP}#g" \
+  "${APP_DIR}/deploy/openrc/maison" | tee /etc/init.d/maison >/dev/null
+chmod +x /etc/init.d/maison
 
 sed \
   -e "s#@@APP_DIR@@#${APP_DIR}#g" \
   -e "s#@@SERVICE_USER@@#${SERVICE_USER}#g" \
   -e "s#@@SERVICE_GROUP@@#${SERVICE_GROUP}#g" \
-  "${APP_DIR}/deploy/openrc/cat-monitor" | tee /etc/init.d/cat-monitor >/dev/null
-chmod +x /etc/init.d/cat-monitor
-
-sed \
-  -e "s#@@APP_DIR@@#${APP_DIR}#g" \
-  -e "s#@@SERVICE_USER@@#${SERVICE_USER}#g" \
-  -e "s#@@SERVICE_GROUP@@#${SERVICE_GROUP}#g" \
-  "${APP_DIR}/deploy/openrc/cloudflared-cat-monitor" | tee /etc/init.d/cloudflared-cat-monitor >/dev/null
-chmod +x /etc/init.d/cloudflared-cat-monitor
+  "${APP_DIR}/deploy/openrc/cloudflared-maison" | tee /etc/init.d/cloudflared-maison >/dev/null
+chmod +x /etc/init.d/cloudflared-maison
 
 rc-update add mosquitto default >/dev/null 2>&1 || true
-rc-update add cat-monitor default >/dev/null 2>&1 || true
+rc-update add maison default >/dev/null 2>&1 || true
 rc-service mosquitto restart || rc-service mosquitto start
-rc-service cat-monitor restart || rc-service cat-monitor start
+rc-service maison restart || rc-service maison start
 
 if command -v cloudflared >/dev/null 2>&1 && grep -q '^CLOUDFLARE_TUNNEL_TOKEN=.' "${APP_DIR}/.env"; then
-  rc-update add cloudflared-cat-monitor default >/dev/null 2>&1 || true
-  rc-service cloudflared-cat-monitor restart || rc-service cloudflared-cat-monitor start
+  rc-update add cloudflared-maison default >/dev/null 2>&1 || true
+  rc-service cloudflared-maison restart || rc-service cloudflared-maison start
 else
   if ! command -v cloudflared >/dev/null 2>&1; then
     printf '%s\n' 'Skipping cloudflared service start: cloudflared is not installed on the Pi.' >&2
@@ -401,7 +384,7 @@ fi
 
 sleep 2
 
-for service in mosquitto cat-monitor cloudflared-cat-monitor; do
+for service in mosquitto maison cloudflared-maison; do
   if rc-service "${service}" status >/dev/null 2>&1; then
     printf '%s: active\n' "${service}"
   else
@@ -418,19 +401,13 @@ stop_pi() {
   ssh_pi sh -s <<'EOF'
 set -eu
 
-if [ -r /etc/os-release ]; then
-  . /etc/os-release
-else
-  ID=unknown
-fi
-
-for service in cloudflared-cat-monitor cat-monitor mosquitto; do
+for service in cloudflared-maison maison mosquitto; do
   if [ -x "/etc/init.d/${service}" ]; then
     rc-service "${service}" stop >/dev/null 2>&1 || true
   fi
 done
 
-for service in mosquitto cat-monitor cloudflared-cat-monitor; do
+for service in mosquitto maison cloudflared-maison; do
   if [ -x "/etc/init.d/${service}" ] && rc-service "${service}" status >/dev/null 2>&1; then
     printf '%s: active\n' "${service}"
   elif [ -x "/etc/init.d/${service}" ]; then
@@ -449,57 +426,29 @@ logs_pi() {
 set -eu
 TARGET="$1"
 
-if [ -r /etc/os-release ]; then
-  . /etc/os-release
-else
-  ID=unknown
-fi
-
-if [ "${ID:-}" = alpine ]; then
-  case "${TARGET}" in
-    stack)
-      touch /var/log/mosquitto/mosquitto.log /var/log/cat-monitor.log /var/log/cloudflared-cat-monitor.log
-      exec tail -f /var/log/mosquitto/mosquitto.log /var/log/cat-monitor.log /var/log/cloudflared-cat-monitor.log
-      ;;
-    mosquitto)
-      touch /var/log/mosquitto/mosquitto.log
-      exec tail -f /var/log/mosquitto/mosquitto.log
-      ;;
-    backend|cat-monitor)
-      touch /var/log/cat-monitor.log
-      exec tail -f /var/log/cat-monitor.log
-      ;;
-    cloudflared|tunnel)
-      touch /var/log/cloudflared-cat-monitor.log
-      exec tail -f /var/log/cloudflared-cat-monitor.log
-      ;;
-    *)
-      printf 'Unknown log target: %s\n' "${TARGET}" >&2
-      printf '%s\n' 'Valid targets: stack, mosquitto, backend, cloudflared' >&2
-      exit 1
-      ;;
-  esac
-else
-  case "${TARGET}" in
-    stack)
-      exec journalctl -f -u mosquitto -u cat-monitor.service -u cloudflared-cat-monitor.service
-      ;;
-    mosquitto)
-      exec journalctl -f -u mosquitto
-      ;;
-    backend|cat-monitor)
-      exec journalctl -f -u cat-monitor.service
-      ;;
-    cloudflared|tunnel)
-      exec journalctl -f -u cloudflared-cat-monitor.service
-      ;;
-    *)
-      printf 'Unknown log target: %s\n' "${TARGET}" >&2
-      printf '%s\n' 'Valid targets: stack, mosquitto, backend, cloudflared' >&2
-      exit 1
-      ;;
-  esac
-fi
+case "${TARGET}" in
+  stack)
+    touch /var/log/mosquitto/mosquitto.log /var/log/maison.log /var/log/cloudflared-maison.log
+    exec tail -f /var/log/mosquitto/mosquitto.log /var/log/maison.log /var/log/cloudflared-maison.log
+    ;;
+  mosquitto)
+    touch /var/log/mosquitto/mosquitto.log
+    exec tail -f /var/log/mosquitto/mosquitto.log
+    ;;
+  backend|maison)
+    touch /var/log/maison.log
+    exec tail -f /var/log/maison.log
+    ;;
+  cloudflared|tunnel)
+    touch /var/log/cloudflared-maison.log
+    exec tail -f /var/log/cloudflared-maison.log
+    ;;
+  *)
+    printf 'Unknown log target: %s\n' "${TARGET}" >&2
+    printf '%s\n' 'Valid targets: stack, mosquitto, backend, cloudflared' >&2
+    exit 1
+    ;;
+esac
 EOF
 }
 
@@ -511,25 +460,11 @@ set -eu
 
 APP_DIR="$1"
 
-if [ -r /etc/os-release ]; then
-  . /etc/os-release
-else
-  ID=unknown
-fi
-
 service_state_openrc() {
   if rc-service "$1" status >/dev/null 2>&1; then
     printf 'active'
   elif [ -x "/etc/init.d/$1" ]; then
     printf 'inactive'
-  else
-    printf 'not-installed'
-  fi
-}
-
-service_state_systemd() {
-  if systemctl list-unit-files "$1" >/dev/null 2>&1; then
-    systemctl is-active "$1" 2>/dev/null || true
   else
     printf 'not-installed'
   fi
@@ -546,23 +481,12 @@ if [ -f "${APP_DIR}/.env" ] && grep -q '^CLOUDFLARE_TUNNEL_TOKEN=.' "${APP_DIR}/
 fi
 
 printf 'Platform:\n'
-printf '  os: %s\n' "${PRETTY_NAME:-unknown}"
-if [ "${ID:-}" = alpine ]; then
-  printf '%s\n' '  init: openrc'
-else
-  printf '%s\n' '  init: systemd'
-fi
+printf '  os: %s\n' "$(. /etc/os-release && printf '%s' "${PRETTY_NAME:-unknown}")"
 
 printf '\nServices:\n'
-if [ "${ID:-}" = alpine ]; then
-  printf '  mosquitto: %s\n' "$(service_state_openrc mosquitto)"
-  printf '  cat-monitor: %s\n' "$(service_state_openrc cat-monitor)"
-  printf '  cloudflared: %s\n' "$(service_state_openrc cloudflared-cat-monitor)"
-else
-  printf '  mosquitto: %s\n' "$(service_state_systemd mosquitto)"
-  printf '  cat-monitor: %s\n' "$(service_state_systemd cat-monitor.service)"
-  printf '  cloudflared: %s\n' "$(service_state_systemd cloudflared-cat-monitor.service)"
-fi
+printf '  mosquitto: %s\n' "$(service_state_openrc mosquitto)"
+printf '  maison: %s\n' "$(service_state_openrc maison)"
+printf '  cloudflared: %s\n' "$(service_state_openrc cloudflared-maison)"
 
 printf '\nRuntime:\n'
 if command -v cloudflared >/dev/null 2>&1; then
@@ -573,7 +497,7 @@ fi
 
 printf '\nPaths:\n'
 printf '  app: %s\n' "${APP_DIR}"
-printf '  backend: %s\n' "${APP_DIR}/backend/target/release/cat-monitor-rust-backend"
+printf '  backend: %s\n' "${APP_DIR}/backend/target/release/maison-backend"
 printf '  frontend: %s\n' "${APP_DIR}/frontend/dist"
 
 printf '\nAccess:\n'

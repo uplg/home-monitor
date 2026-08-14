@@ -1,8 +1,8 @@
-# Maison (cat-monitor) — Architecture Brief
+# Maison — Architecture Brief
 
 ## 1. Project identity
 
-- **Name**: "Maison" (repo/internal name `cat-monitor`)
+- **Name**: "Maison" (crate `maison-backend`, service `maison`)
 - **Purpose**: self-hosted home-automation dashboard — cat devices (feeder,
   fountain, litter box), lamps (Hue BLE, Zigbee), smart plugs (Meross), IR
   climate control (Broadlink → Mitsubishi AC), and French Tempo electricity
@@ -41,11 +41,11 @@ maison/
 │                            #   (shadcn), i18n (en+fr), ThemeContext
 │                            #   (system/light/dark, .dark class strategy)
 ├── cache/tempo/             # Tempo history + calibration (persisted)
-├── deploy/                  # systemd + OpenRC units, mosquitto conf
+├── deploy/                  # OpenRC units, mosquitto conf
 ├── docs/                    # Pi setup, Tempo calibration, flashing
 ├── mosquitto/               # broker config + certs (Meross TLS :8883)
 ├── scripts/                 # Pi cross-build (zigbuild), IR capture, flash
-├── Makefile                 # backend/frontend lifecycle, compose, tunnel
+├── Makefile                 # dev targets + Pi deploy wrappers + cloudflared upgrade
 ├── deploy.sh                # one-shot Pi deployment helper
 └── *.json                   # runtime state (devices, lamps, users,
                              #   broadlink-codes, climate-state, …)
@@ -134,8 +134,10 @@ Driver design (`zigbee_native.rs`):
 
 ## 7. Operational notes
 
-- `make start` = host backend + Docker frontend + Mosquitto (+ optional
-  Cloudflare tunnel). Pi production uses OpenRC services, no Docker.
+- Production = Raspberry Pi 1 only (Alpine 3.24, sys mode, OpenRC — no
+  Docker anywhere). Dev machine runs `make backend` / `make frontend`;
+  deployment goes through `deploy.sh` (wrapped by `make deploy*`), and
+  `make cloudflared-upgrade` rebuilds/swaps the ARMv6 tunnel binary.
 - Runtime JSON state lives at the repo root (gitignored where mutable).
 - `users.json` requires Argon2 password hashes; the backend refuses the
   default JWT secret.

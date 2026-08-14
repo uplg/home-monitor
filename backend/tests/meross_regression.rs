@@ -9,7 +9,7 @@ use axum::{
     body::{to_bytes, Body},
     http::{Method, Request, StatusCode},
 };
-use cat_monitor_rust_backend::{auth::Claims, build_app_from_config, config::Config};
+use maison_backend::{auth::Claims, build_app_from_config, config::Config};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde_json::{json, Value};
 use tower::ServiceExt;

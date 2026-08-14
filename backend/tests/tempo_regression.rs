@@ -7,12 +7,12 @@ use axum::{
 };
 use chrono::Utc;
 use chrono_tz::Europe::Paris;
-use cat_monitor_rust_backend::{auth::Claims, build_app_from_config, config::Config};
+use maison_backend::{auth::Claims, build_app_from_config, config::Config};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde_json::Value;
 use tower::ServiceExt;
 
-use cat_monitor_rust_backend::tempo::TempoService;
+use maison_backend::tempo::TempoService;
 
 #[tokio::test]
 async fn tempo_state_uses_migrated_cache_data() {
