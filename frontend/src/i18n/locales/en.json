@@ -424,8 +424,7 @@
     "temperature": "Temperature",
     "fan": "Fan",
     "verticalVane": "Vertical vane",
-    "timerMode": "Timer mode",
-    "stopTime": "Stop time",
+    "timerMode": "Auto-off timer",
     "econoCool": "Econo cool",
     "econoCoolDescription": "Only meaningful in cool mode.",
     "generatedCommand": "Generated command",
@@ -453,9 +452,10 @@
       "swing": "Swing"
     },
     "timerModes": {
-      "none": "None",
-      "stop": "Stop only"
-    }
+      "none": "Off",
+      "stop": "Turn off after a delay"
+    },
+    "stopAfter": "Turn off after"
   },
   "tempo": {
     "title": "Tempo EDF",

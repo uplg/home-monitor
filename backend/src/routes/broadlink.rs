@@ -116,6 +116,13 @@ struct CodesResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct ClimateStateResponse {
+    success: bool,
+    state: Option<broadlink::StoredClimateState>,
+    message: &'static str,
+}
+
+#[derive(Debug, Serialize)]
 struct CodeResponse {
     success: bool,
     code: broadlink::BroadlinkCodeEntry,
@@ -132,6 +139,7 @@ pub fn router() -> Router<AppState> {
         .route("/codes/{code_id}/send", post(send_code))
         .route("/mitsubishi/codes", get(list_mitsubishi_codes))
         .route("/mitsubishi/send", post(send_mitsubishi_command))
+        .route("/mitsubishi/state", get(get_climate_state))
 }
 
 async fn discover(
@@ -278,6 +286,19 @@ async fn list_mitsubishi_codes(
         total: codes.len(),
         codes,
         message: "Mitsubishi IR codes retrieved",
+    }))
+}
+
+async fn get_climate_state(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+) -> Result<Json<ClimateStateResponse>, AppError> {
+    let _ = user.0;
+    let climate_state = state.broadlink.climate_state().await;
+    Ok(Json(ClimateStateResponse {
+        success: true,
+        state: climate_state,
+        message: "Last commanded Mitsubishi state",
     }))
 }
 

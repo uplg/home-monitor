@@ -1,6 +1,6 @@
 [Unit]
 Description=cat-monitor backend
-After=network-online.target mosquitto.service zigbee2mqtt.service
+After=network-online.target mosquitto.service
 Wants=network-online.target mosquitto.service
 
 [Service]

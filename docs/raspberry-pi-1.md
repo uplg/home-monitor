@@ -16,8 +16,7 @@ Recommended constraints for this target:
 On the Pi, run:
 
 - Mosquitto on the host
-- Zigbee2MQTT on the host
-- the Rust backend release binary
+- the Rust backend release binary (drives the Zigbee dongle natively)
 - the prebuilt frontend files in `frontend/dist`
 
 The backend now serves the frontend directly when `FRONTEND_DIST_DIR/index.html` exists.
@@ -119,16 +118,12 @@ JWT_SECRET=replace-this
 FRONTEND_DIST_DIR=frontend/dist
 DISABLE_BLUETOOTH=true
 AUTH_COOKIE_SECURE=false
-MQTT_HOST=127.0.0.1
-MQTT_PORT=1883
-ZIGBEE_ENABLED=true
 ```
 
 Notes:
 
 - keep `AUTH_COOKIE_SECURE=true` only if the Pi is behind real HTTPS
 - `DISABLE_BLUETOOTH=true` is still recommended even if you built with `--no-default-features`
-- `MQTT_HOST=127.0.0.1` is the expected local Mosquitto setup on the Pi
 
 ## Mosquitto on Alpine
 
@@ -154,7 +149,7 @@ sudo rc-service mosquitto restart
 
 This keeps:
 
-- `1883` for backend and future Zigbee bridge publishing
+- `1883` for local debugging
 - `8883` for Meross devices that need TLS MQTT
 
 ## OpenRC services
@@ -198,26 +193,18 @@ The service uses the same `.env` file as the backend and runs only when `CLOUDFL
 
 ## Zigbee on Alpine
 
-Node and Zigbee2MQTT are no longer the deployment target for Raspberry Pi 1 on Alpine.
+The Rust backend drives the Zigbee coordinator natively over EZSP; there is no Node or Zigbee2MQTT layer. Mosquitto stays in place because Meross devices need a reachable TLS broker.
 
-Mosquitto stays in place because Meross still needs MQTT. The next step is a minimal Rust Zigbee bridge that can publish a compatible subset of topics on the local broker without dragging in Node.
-
-You can already switch the backend scaffold with:
+Configure the dongle with:
 
 ```bash
-ZIGBEE_BACKEND=native
 ZIGBEE_ADAPTER=ember
 ZIGBEE_SERIAL_PORT=/dev/ttyUSB0
 ZIGBEE_EZSP_PROTOCOL_VERSION=13
 ```
 
-In `native` mode, the existing HTTP/API surface stays intact and persisted lamps remain available, but pairing and radio control still return an explicit "not implemented yet" error until the Rust driver lands.
-
-The current scaffold already opens the serial transport and routes commands through a native driver abstraction, so the next implementation work is focused on real Ember/EZSP frames rather than on restructuring the app again.
-
 ## Important caveats
 
 - Hue BLE on Raspberry Pi 1 is not a good default target; build without the Bluetooth feature unless you explicitly need it.
-- Zigbee2MQTT is not the target runtime anymore for Alpine Pi 1; the intended direction is a minimal Rust Zigbee bridge.
 - The frontend is served by the Rust backend on the same port as the API, so the default access URL is `http://<pi-ip>:3033`.
 - `cloudflared` itself is host-native now, but its availability still depends on Cloudflare providing a working ARMv6 binary for the OS you install on the Pi.

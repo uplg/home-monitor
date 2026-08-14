@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /* Enable class-based dark mode: `dark:` utilities apply when an ancestor
    (or the element itself) carries the `.dark` class set by ThemeProvider. */

@@ -29,7 +29,7 @@ The Rust backend reads these files directly from the repo root:
 - `hue-lamps-blacklist.json`
 - `zigbee-lamps.json`
 - `zigbee-lamps-blacklist.json`
-- `zigbee2mqtt/`
+- `climate-state.json`
 - `mosquitto/`
 
 Tempo cache and calibration files now live in `cache/tempo/`.
@@ -48,7 +48,7 @@ Tempo recalibration workflow is documented in `docs/tempo-calibration.md`.
 For Raspberry Pi 1 deployments, the intended setup is fully host-native:
 
 - run Mosquitto directly on the Pi
-- use the Rust-native Zigbee backend for lamps (`ZIGBEE_BACKEND=native`)
+- plug in the Zigbee USB coordinator; the backend drives it natively over EZSP
 - plug a compatible Zigbee USB coordinator into the Pi, for example a Sonoff MG21-based dongle
 - build the frontend once, then let the Rust backend serve `frontend/dist`
 - run a Rust release binary instead of `cargo run`
@@ -66,7 +66,7 @@ The Raspberry Pi 1 target now assumes Alpine Linux with OpenRC and a musl backen
 
 For first boot without screen or keyboard, use `scripts/flash-alpine-headless-macos.sh` and `docs/alpine-headless-flash-macos.md`.
 
-For Zigbee, the backend recognizes `ZIGBEE_BACKEND=mqtt` and `ZIGBEE_BACKEND=native`. Zigbee2MQTT remains acceptable on more capable machines, but Raspberry Pi 1 should prefer `ZIGBEE_BACKEND=native` so the stack stays host-native and avoids the extra Zigbee2MQTT/Node.js layer.
+Zigbee is driven natively by the Rust backend over EZSP (serial dongle); there is no Zigbee2MQTT or Node.js layer.
 
 ## Environment
 
@@ -80,12 +80,8 @@ Main settings:
 - `JWT_SECRET`: auth signing secret
 - `FRONTEND_DIST_DIR`: built frontend directory served directly by the backend when `index.html` exists
 - `DISABLE_BLUETOOTH`: set `true` to disable Hue BLE support
-- `MQTT_HOST` / `MQTT_PORT`: local MQTT broker used by Meross and the optional MQTT Zigbee backend
-- `ZIGBEE_ENABLED`: legacy `make start` flag for Zigbee2MQTT-oriented flows
 - `ZIGBEE_SERIAL_PORT`: serial path of the Zigbee USB dongle
 - `ZIGBEE_ADAPTER`: adapter type, `ember` for MG21/EZSP dongles such as the Sonoff Dongle Lite MG21
-- `ZIGBEE_BACKEND`: `native` for the Rust EZSP backend, `mqtt` for Zigbee2MQTT compatibility mode
-- `ZIGBEE2MQTT_DIR`: local installation directory of Zigbee2MQTT when using `ZIGBEE_BACKEND=mqtt`
 - `AUTH_COOKIE_NAME`: session cookie name
 - `AUTH_COOKIE_SECURE`: keep `true` when the app is exposed through HTTPS/Cloudflare
 - `AUTH_RATE_LIMIT_ATTEMPTS`: max failed login attempts per IP+username window
@@ -137,24 +133,6 @@ make frontend
 
 The frontend proxies `/api` to `http://localhost:3033` by default.
 
-## Zigbee2MQTT on host
-
-Zigbee2MQTT still exists as a compatibility path and remains fine on stronger machines, but it is no longer the recommended Raspberry Pi 1 deployment.
-
-- Raspberry Pi 1 should use the fully host-native layout: host backend + host-served frontend + host Mosquitto + native Zigbee in the Rust backend
-- Docker is only an optional convenience for stronger machines during development
-- the Sonoff Dongle Lite MG21 should use `adapter: ember`
-- repository config lives in `zigbee2mqtt/configuration.yaml`
-- full setup instructions are in `docs/zigbee2mqtt-host-setup.md`
-
-Useful targets:
-
-```bash
-make zigbee2mqtt
-make zigbee2mqtt-start
-make zigbee2mqtt-stop
-```
-
 ## Docker
 
 Docker is kept only for the frontend, Mosquitto, and the optional Cloudflare tunnel.
@@ -199,7 +177,6 @@ make start
 This starts:
 
 - the Rust backend on the host
-- Zigbee2MQTT on the host only for the legacy MQTT Zigbee flow when `ZIGBEE_ENABLED=true`
 - the frontend container
 - the Mosquitto container
 - optionally the Cloudflare tunnel container

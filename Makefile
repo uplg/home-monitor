@@ -1,17 +1,12 @@
-.PHONY: help backend backend-release backend-build-release backend-build-pi backend-build-pi-cross backend-start backend-start-release backend-stop frontend frontend-build compose-up compose-down tunnel-up tunnel-down zigbee2mqtt zigbee2mqtt-start zigbee2mqtt-stop start stop status
+.PHONY: help backend backend-release backend-build-release backend-build-pi backend-build-pi-cross backend-start backend-start-release backend-stop frontend frontend-build compose-up compose-down tunnel-up tunnel-down start stop status
 
 LOG_DIR := logs
 BACKEND_LOG := $(LOG_DIR)/backend.log
 BACKEND_PID := .backend.pid
-ZIGBEE2MQTT_LOG := $(LOG_DIR)/zigbee2mqtt.log
-ZIGBEE2MQTT_PID := .zigbee2mqtt.pid
 BACKEND_RELEASE_BIN := backend/target/release/cat-monitor-rust-backend
 BACKEND_BUILD_FLAGS ?=
 API_PORT ?= $(shell grep -E '^(API_PORT|PORT)=' .env 2>/dev/null | tail -n1 | cut -d'=' -f2 || echo 3033)
 PUBLIC_HOSTNAME ?= $(shell grep -E '^CLOUDFLARE_PUBLIC_HOSTNAME=' .env 2>/dev/null | cut -d'=' -f2)
-ZIGBEE_ENABLED ?= $(shell grep -E '^ZIGBEE_ENABLED=' .env 2>/dev/null | cut -d'=' -f2 || echo false)
-ZIGBEE_SERIAL_PORT ?= $(shell grep -E '^ZIGBEE_SERIAL_PORT=' .env 2>/dev/null | cut -d'=' -f2)
-ZIGBEE2MQTT_DIR ?= $(shell grep -E '^ZIGBEE2MQTT_DIR=' .env 2>/dev/null | cut -d'=' -f2 || echo /opt/zigbee2mqtt)
 
 help:
 	@printf "Targets:\n"
@@ -25,9 +20,6 @@ help:
 	@printf "  make backend-stop    Stop the host backend\n"
 	@printf "  make frontend        Run the frontend dev server\n"
 	@printf "  make frontend-build  Build the frontend\n"
-	@printf "  make zigbee2mqtt     Run Zigbee2MQTT on the host in foreground\n"
-	@printf "  make zigbee2mqtt-start Start Zigbee2MQTT on the host in background\n"
-	@printf "  make zigbee2mqtt-stop Stop host Zigbee2MQTT\n"
 	@printf "  make compose-up      Start frontend + mosquitto with Docker\n"
 	@printf "  make compose-down    Stop Docker services\n"
 	@printf "  make tunnel-up       Start the Cloudflare tunnel\n"
@@ -98,53 +90,6 @@ frontend:
 frontend-build:
 	bun --cwd frontend run build
 
-zigbee2mqtt:
-	@if [ "$(ZIGBEE_ENABLED)" != "true" ]; then \
-		printf '%s\n' 'Set ZIGBEE_ENABLED=true in .env to run Zigbee2MQTT'; \
-		exit 1; \
-	fi
-	@if [ -z "$(ZIGBEE_SERIAL_PORT)" ]; then \
-		printf '%s\n' 'Set ZIGBEE_SERIAL_PORT in .env before starting Zigbee2MQTT'; \
-		exit 1; \
-	fi
-	@if [ ! -d "$(ZIGBEE2MQTT_DIR)" ]; then \
-		printf 'Zigbee2MQTT directory not found: %s\n' '$(ZIGBEE2MQTT_DIR)'; \
-		exit 1; \
-	fi
-	cd "$(ZIGBEE2MQTT_DIR)" && pnpm start
-
-zigbee2mqtt-start:
-	@mkdir -p $(LOG_DIR)
-	@if [ "$(ZIGBEE_ENABLED)" != "true" ]; then \
-		printf '%s\n' 'Set ZIGBEE_ENABLED=true in .env to run Zigbee2MQTT'; \
-		exit 1; \
-	fi
-	@if [ -z "$(ZIGBEE_SERIAL_PORT)" ]; then \
-		printf '%s\n' 'Set ZIGBEE_SERIAL_PORT in .env before starting Zigbee2MQTT'; \
-		exit 1; \
-	fi
-	@if [ ! -d "$(ZIGBEE2MQTT_DIR)" ]; then \
-		printf 'Zigbee2MQTT directory not found: %s\n' '$(ZIGBEE2MQTT_DIR)'; \
-		exit 1; \
-	fi
-	@if [ -f $(ZIGBEE2MQTT_PID) ] && kill -0 $$(cat $(ZIGBEE2MQTT_PID)) 2>/dev/null; then \
-		printf "Zigbee2MQTT already running (PID %s)\n" "$$(cat $(ZIGBEE2MQTT_PID))"; \
-	else \
-		nohup sh -c 'cd "$(ZIGBEE2MQTT_DIR)" && pnpm start' > $(ZIGBEE2MQTT_LOG) 2>&1 & echo $$! > $(ZIGBEE2MQTT_PID); \
-		printf "Zigbee2MQTT started on host (PID %s)\n" "$$(cat $(ZIGBEE2MQTT_PID))"; \
-		printf "Zigbee2MQTT log: %s\n" "$(ZIGBEE2MQTT_LOG)"; \
-	fi
-
-zigbee2mqtt-stop:
-	@if [ -f $(ZIGBEE2MQTT_PID) ] && kill -0 $$(cat $(ZIGBEE2MQTT_PID)) 2>/dev/null; then \
-		kill $$(cat $(ZIGBEE2MQTT_PID)) 2>/dev/null || true; \
-		printf "Stopped Zigbee2MQTT PID %s\n" "$$(cat $(ZIGBEE2MQTT_PID))"; \
-	else \
-		printf "Zigbee2MQTT is not running\n"; \
-	fi
-	@rm -f $(ZIGBEE2MQTT_PID)
-	@pkill -f "$(ZIGBEE2MQTT_DIR).*pnpm start" 2>/dev/null || true
-
 compose-up:
 	docker compose up -d --build frontend mqtt
 
@@ -166,11 +111,6 @@ tunnel-down:
 
 start: backend-start
 	@docker compose up -d --build frontend mqtt
-	@if [ "$(ZIGBEE_ENABLED)" = "true" ]; then \
-		$(MAKE) zigbee2mqtt-start; \
-	else \
-		printf '%s\n' 'Zigbee2MQTT skipped: set ZIGBEE_ENABLED=true in .env to enable it'; \
-	fi
 	@if [ -n "$${CLOUDFLARE_TUNNEL_TOKEN:-}" ] || grep -q '^CLOUDFLARE_TUNNEL_TOKEN=.' .env 2>/dev/null; then \
 		docker compose --profile tunnel up -d cloudflared || printf '%s\n' 'Cloudflare tunnel failed to start. The token is likely invalid; keep local services running and replace CLOUDFLARE_TUNNEL_TOKEN with the connector token from your named tunnel.'; \
 	else \
@@ -179,11 +119,6 @@ start: backend-start
 	@printf '\nStarted services:\n'
 	@printf '%s\n' "- Backend: http://localhost:$(API_PORT)"
 	@printf '%s\n' '- Frontend: http://localhost'
-	@if [ "$(ZIGBEE_ENABLED)" = "true" ]; then \
-		printf '%s\n' "- Zigbee2MQTT: host mode ($(ZIGBEE_SERIAL_PORT))"; \
-	else \
-		printf '%s\n' '- Zigbee2MQTT: disabled'; \
-	fi
 	@printf '%s\n' '- MQTT: localhost:1883'
 	@printf '%s\n' '- MQTT: localhost:8883'
 	@if [ -n "$(PUBLIC_HOSTNAME)" ]; then \
@@ -192,19 +127,13 @@ start: backend-start
 		printf '%s\n' '- Public URL: configure a Cloudflare public hostname and set CLOUDFLARE_PUBLIC_HOSTNAME in .env'; \
 	fi
 
-stop: backend-stop zigbee2mqtt-stop
+stop: backend-stop
 	@docker compose --profile tunnel down --remove-orphans
 
 status:
 	@printf "Backend: "
 	@if [ -f $(BACKEND_PID) ] && kill -0 $$(cat $(BACKEND_PID)) 2>/dev/null; then \
 		printf "running (PID %s)\n" "$$(cat $(BACKEND_PID))"; \
-	else \
-		printf "stopped\n"; \
-	fi
-	@printf "Zigbee2MQTT: "
-	@if [ -f $(ZIGBEE2MQTT_PID) ] && kill -0 $$(cat $(ZIGBEE2MQTT_PID)) 2>/dev/null; then \
-		printf "running (PID %s)\n" "$$(cat $(ZIGBEE2MQTT_PID))"; \
 	else \
 		printf "stopped\n"; \
 	fi

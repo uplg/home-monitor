@@ -424,8 +424,7 @@
     "temperature": "Température",
     "fan": "Ventilation",
     "verticalVane": "Volet vertical",
-    "timerMode": "Minuteur",
-    "stopTime": "Heure d'arrêt",
+    "timerMode": "Minuteur d’arrêt",
     "econoCool": "Mode éco froid",
     "econoCoolDescription": "Utile uniquement en mode froid.",
     "generatedCommand": "Commande générée",
@@ -453,9 +452,10 @@
       "swing": "Balayage"
     },
     "timerModes": {
-      "none": "Aucun",
-      "stop": "Arrêt uniquement"
-    }
+      "none": "Désactivé",
+      "stop": "Éteindre après un délai"
+    },
+    "stopAfter": "Éteindre dans"
   },
   "tempo": {
     "title": "Tempo EDF",

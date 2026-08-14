@@ -17,18 +17,13 @@ pub struct Config {
     pub devices_path: PathBuf,
     pub device_cache_path: PathBuf,
     pub broadlink_codes_path: PathBuf,
+    pub climate_state_path: PathBuf,
     pub hue_lamps_path: PathBuf,
     pub hue_blacklist_path: PathBuf,
     pub zigbee_lamps_path: PathBuf,
     pub zigbee_lamps_blacklist_path: PathBuf,
     pub nabaztag_config_path: PathBuf,
     pub nabaztag_host: Option<String>,
-    pub mqtt_host: String,
-    pub mqtt_port: u16,
-    pub mqtt_username: Option<String>,
-    pub mqtt_password: Option<String>,
-    pub mqtt_client_id: String,
-    pub z2m_base_topic: String,
     pub zigbee_permit_join_seconds: u16,
 }
 
@@ -61,6 +56,10 @@ impl Config {
         let broadlink_codes_path = env::var("BROADLINK_CODES_JSON_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| source_root.join("broadlink-codes.json"));
+
+        let climate_state_path = env::var("CLIMATE_STATE_JSON_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| source_root.join("climate-state.json"));
 
         let hue_lamps_path = env::var("HUE_LAMPS_JSON_PATH")
             .map(PathBuf::from)
@@ -130,29 +129,6 @@ impl Config {
         let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
         let jwt_secret =
             env::var("JWT_SECRET").unwrap_or_else(|_| "super-secret-cat-key-change-me".to_string());
-        let mqtt_host = env::var("MQTT_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-        let mqtt_port = env::var("MQTT_PORT")
-            .ok()
-            .and_then(|value| value.parse::<u16>().ok())
-            .unwrap_or(1883);
-        let mqtt_username = env::var("MQTT_USERNAME").ok().and_then(|value| {
-            if value.is_empty() {
-                None
-            } else {
-                Some(value)
-            }
-        });
-        let mqtt_password = env::var("MQTT_PASSWORD").ok().and_then(|value| {
-            if value.is_empty() {
-                None
-            } else {
-                Some(value)
-            }
-        });
-        let mqtt_client_id =
-            env::var("MQTT_CLIENT_ID").unwrap_or_else(|_| "cat-monitor-backend".to_string());
-        let z2m_base_topic =
-            env::var("Z2M_BASE_TOPIC").unwrap_or_else(|_| "zigbee2mqtt".to_string());
         let zigbee_permit_join_seconds = env::var("ZIGBEE_PERMIT_JOIN_SECONDS")
             .ok()
             .and_then(|value| value.parse::<u16>().ok())
@@ -174,18 +150,13 @@ impl Config {
             devices_path,
             device_cache_path,
             broadlink_codes_path,
+            climate_state_path,
             hue_lamps_path,
             hue_blacklist_path,
             zigbee_lamps_path,
             zigbee_lamps_blacklist_path,
             nabaztag_config_path,
             nabaztag_host,
-            mqtt_host,
-            mqtt_port,
-            mqtt_username,
-            mqtt_password,
-            mqtt_client_id,
-            z2m_base_topic,
             zigbee_permit_join_seconds,
         }
     }
@@ -207,18 +178,13 @@ impl Config {
             devices_path: source_root.join("devices.json"),
             device_cache_path: source_root.join("device-cache.json"),
             broadlink_codes_path: source_root.join("broadlink-codes.json"),
+            climate_state_path: source_root.join("climate-state.json"),
             hue_lamps_path: source_root.join("hue-lamps.json"),
             hue_blacklist_path: source_root.join("hue-lamps-blacklist.json"),
             zigbee_lamps_path: source_root.join("zigbee-lamps.json"),
             zigbee_lamps_blacklist_path: source_root.join("zigbee-lamps-blacklist.json"),
             nabaztag_config_path: source_root.join("nabaztag.json"),
             nabaztag_host: None,
-            mqtt_host: "127.0.0.1".to_string(),
-            mqtt_port: 1883,
-            mqtt_username: None,
-            mqtt_password: None,
-            mqtt_client_id: "cat-monitor-tests".to_string(),
-            z2m_base_topic: "zigbee2mqtt".to_string(),
             zigbee_permit_join_seconds: 120,
             source_root,
         }

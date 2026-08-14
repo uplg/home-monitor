@@ -31,6 +31,7 @@ use error::AppError;
 use hue::HueManager;
 use nabaztag::NabaztagManager;
 use tower_http::cors::CorsLayer;
+use tower_http::timeout::TimeoutLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use routes::auth::{load_users, SharedUsers};
 use meross::MerossManager;
@@ -72,7 +73,8 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
     let users = Arc::new(load_users(&config)?);
     let auth_rate_limiter = AuthRateLimiter::default();
     let refresh_store = RefreshTokenStore::default();
-    let broadlink = BroadlinkManager::new(&config.broadlink_codes_path)?;
+    let broadlink =
+        BroadlinkManager::new(&config.broadlink_codes_path, &config.climate_state_path)?;
     let hue = HueManager::new(config.as_ref())?;
     let meross = MerossManager::new(&config.meross_devices_path)?;
     let nabaztag = NabaztagManager::new(
@@ -144,6 +146,13 @@ pub fn build_app(state: AppState) -> Router {
     // same origin so legitimate requests never need CORS.
     app.layer(middleware::from_fn(security_headers))
         .layer(CorsLayer::new())
+        // Last-resort guard so no request can hang a connection forever; the
+        // limit sits above every legitimate long operation (IR learning,
+        // device discovery, Zigbee command reply timeout of 120s).
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::GATEWAY_TIMEOUT,
+            std::time::Duration::from_secs(180),
+        ))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::extract::Request| {

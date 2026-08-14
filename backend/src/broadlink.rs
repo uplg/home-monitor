@@ -20,8 +20,27 @@ const DEFAULT_LEARN_TIMEOUT_SECS: u64 = 30;
 pub struct BroadlinkManager {
     codes_path: Arc<PathBuf>,
     codes: Arc<RwLock<StoredCodes>>,
+    climate_state_path: Arc<PathBuf>,
+    climate_state: Arc<RwLock<Option<StoredClimateState>>>,
     discovered_devices: Arc<RwLock<Option<Vec<BroadlinkDiscoveredDevice>>>>,
     operation_lock: Arc<Mutex<()>>,
+}
+
+/// Last Mitsubishi climate state commanded through this backend. IR is
+/// one-way, so this is the best available approximation of the unit's state;
+/// it is persisted so the UI can restore the last settings across restarts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredClimateState {
+    /// Whether the last sent command left the unit on.
+    pub power: bool,
+    /// The most recent command sent (possibly `state-off`).
+    pub last_command: String,
+    /// The most recent non-off structured command, used to restore the form.
+    pub last_on_command: Option<String>,
+    pub host: String,
+    pub model: Option<String>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -110,7 +129,7 @@ struct StoredCodes {
 }
 
 impl BroadlinkManager {
-    pub fn new(codes_path: &Path) -> Result<Self, AppError> {
+    pub fn new(codes_path: &Path, climate_state_path: &Path) -> Result<Self, AppError> {
         let codes = if codes_path.exists() {
             let content = std::fs::read_to_string(codes_path)?;
             load_stored_codes(&content)?
@@ -118,12 +137,24 @@ impl BroadlinkManager {
             StoredCodes::default()
         };
 
+        // A corrupt or unreadable climate-state file must never prevent the
+        // backend from starting; the state is only a UI convenience.
+        let climate_state = std::fs::read_to_string(climate_state_path)
+            .ok()
+            .and_then(|content| serde_json::from_str::<StoredClimateState>(content.trim()).ok());
+
         Ok(Self {
             codes_path: Arc::new(codes_path.to_path_buf()),
             codes: Arc::new(RwLock::new(codes)),
+            climate_state_path: Arc::new(climate_state_path.to_path_buf()),
+            climate_state: Arc::new(RwLock::new(climate_state)),
             discovered_devices: Arc::new(RwLock::new(None)),
             operation_lock: Arc::new(Mutex::new(())),
         })
+    }
+
+    pub async fn climate_state(&self) -> Option<StoredClimateState> {
+        self.climate_state.read().await.clone()
     }
 
     pub async fn discover(
@@ -376,13 +407,18 @@ impl BroadlinkManager {
         model: Option<String>,
     ) -> Result<SendResult, AppError> {
         let normalized_command = normalize_lookup_value(&command);
-        if let Some(packet) = mitsubishi_ir::encode_mitsubishi_command(&normalized_command)
-            .map_err(|error| AppError::http(axum::http::StatusCode::BAD_REQUEST, error))?
+        let clock_ticks = mitsubishi_ir::current_clock_ticks();
+        if let Some(packet) =
+            mitsubishi_ir::encode_mitsubishi_command(&normalized_command, Some(clock_ticks))
+                .map_err(|error| AppError::http(axum::http::StatusCode::BAD_REQUEST, error))?
         {
             let packet_base64 = STANDARD.encode(&packet);
-            return self
-                .send_packet(host, local_ip, packet_base64, None, Some(normalized_command))
+            let result = self
+                .send_packet(host, local_ip, packet_base64, None, Some(normalized_command.clone()))
+                .await?;
+            self.record_climate_state(&normalized_command, &result.host, model.as_deref())
                 .await;
+            return Ok(result);
         }
 
         let normalized_model = model.as_deref().map(normalize_lookup_value);
@@ -423,6 +459,43 @@ impl BroadlinkManager {
             Some(code.command),
         )
         .await
+    }
+
+    /// Remembers the last commanded climate state and persists it. Failures
+    /// are logged but never propagated: the IR command itself already went
+    /// out, and the stored state is only used to restore the UI.
+    async fn record_climate_state(&self, command: &str, host: &str, model: Option<&str>) {
+        let updated = {
+            let mut state = self.climate_state.write().await;
+            let power = command != "state-off";
+            let last_on_command = if power {
+                Some(command.to_string())
+            } else {
+                state.as_ref().and_then(|previous| previous.last_on_command.clone())
+            };
+            let next = StoredClimateState {
+                power,
+                last_command: command.to_string(),
+                last_on_command,
+                host: host.to_string(),
+                model: model.map(str::to_string),
+                updated_at: Utc::now(),
+            };
+            *state = Some(next.clone());
+            next
+        };
+
+        let payload = match serde_json::to_string_pretty(&updated) {
+            Ok(payload) => payload,
+            Err(error) => {
+                tracing::warn!(?error, "failed to serialize climate state");
+                return;
+            }
+        };
+        if let Err(error) = write_string_to_path(self.climate_state_path.as_path(), &format!("{payload}\n"))
+        {
+            tracing::warn!(?error, "failed to persist climate state");
+        }
     }
 
     async fn persist_codes(&self) -> Result<(), AppError> {
@@ -612,7 +685,8 @@ mod tests {
             .join("cat-monitor-broadlink-tests")
             .join(Uuid::new_v4().to_string());
         let path = temp_root.join("broadlink-codes.json");
-        let manager = BroadlinkManager::new(&path).expect("manager should build");
+        let climate_path = temp_root.join("climate-state.json");
+        let manager = BroadlinkManager::new(&path, &climate_path).expect("manager should build");
 
         let code = manager
             .save_code(SaveCodeRequest {
@@ -636,4 +710,34 @@ mod tests {
         assert!(saved.contains("cool_22_auto"));
     }
 
+    #[tokio::test]
+    async fn climate_state_is_recorded_and_reloaded() {
+        let temp_root = std::env::temp_dir()
+            .join("cat-monitor-broadlink-tests")
+            .join(Uuid::new_v4().to_string());
+        let codes_path = temp_root.join("broadlink-codes.json");
+        let climate_path = temp_root.join("climate-state.json");
+        let manager =
+            BroadlinkManager::new(&codes_path, &climate_path).expect("manager should build");
+
+        let on_command = "state-cool-21-fan-auto-vane-auto-wide-center-stopin-180";
+        manager
+            .record_climate_state(on_command, "192.168.1.50", Some("msz-hj5va"))
+            .await;
+        manager
+            .record_climate_state("state-off", "192.168.1.50", Some("msz-hj5va"))
+            .await;
+
+        let state = manager.climate_state().await.expect("state should exist");
+        assert!(!state.power);
+        assert_eq!(state.last_command, "state-off");
+        // Turning off must not forget the last on-state settings.
+        assert_eq!(state.last_on_command.as_deref(), Some(on_command));
+
+        // A fresh manager reloads the persisted state from disk.
+        let reloaded =
+            BroadlinkManager::new(&codes_path, &climate_path).expect("manager should build");
+        let state = reloaded.climate_state().await.expect("state should persist");
+        assert_eq!(state.last_on_command.as_deref(), Some(on_command));
+    }
 }

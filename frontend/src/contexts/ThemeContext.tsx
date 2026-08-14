@@ -39,7 +39,7 @@ function applyTheme(resolved: ResolvedTheme) {
   root.classList.toggle("dark", resolved === "dark");
   // Keep the browser/PWA chrome in sync with the active theme.
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", resolved === "dark" ? "#020817" : "#0f172a");
+  if (meta) meta.setAttribute("content", resolved === "dark" ? "#020817" : "#faf9f6");
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

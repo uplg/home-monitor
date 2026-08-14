@@ -8,6 +8,8 @@ const MITSUBISHI_ZERO_SPACE_US: u16 = 420;
 const MITSUBISHI_REPEAT_MARK_US: u16 = 440;
 const MITSUBISHI_REPEAT_GAP_US: u16 = 15500;
 const MITSUBISHI_STATE_LEN: usize = 18;
+/// The Mitsubishi clock counts in 10-minute ticks; one day is 144 ticks.
+const TICKS_PER_DAY: u16 = 144;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Mode {
@@ -69,8 +71,11 @@ struct MitsubishiState {
     i_see: bool,
     ecocool: bool,
     clock: u8,
-    start_clock: u8,
-    stop_clock: u8,
+    start_clock: Option<u8>,
+    stop_clock: Option<u8>,
+    /// Relative stop timer ("turn off in N ticks"), resolved against the
+    /// injected clock at encode time.
+    stop_in_ticks: Option<u8>,
     timer_mode: TimerMode,
 }
 
@@ -86,21 +91,51 @@ impl Default for MitsubishiState {
             i_see: false,
             ecocool: false,
             clock: 0,
-            start_clock: 0,
-            stop_clock: 0,
+            start_clock: None,
+            stop_clock: None,
+            stop_in_ticks: None,
             timer_mode: TimerMode::None,
         }
     }
 }
 
-pub fn encode_mitsubishi_command(command: &str) -> Result<Option<Vec<u8>>, String> {
+/// Encodes a `state-*` command into a Broadlink IR packet.
+///
+/// `clock_ticks` is the AC unit's wall clock in 10-minute ticks since
+/// midnight. Every Mitsubishi frame resets the unit's internal clock, and the
+/// start/stop timers are absolute times against that clock — so the caller
+/// must pass the current local time or the timers drift on every send.
+pub fn encode_mitsubishi_command(
+    command: &str,
+    clock_ticks: Option<u8>,
+) -> Result<Option<Vec<u8>>, String> {
     if !command.starts_with("state-") {
         return Ok(None);
     }
 
-    let state = parse_state_command(command)?;
+    let mut state = parse_state_command(command)?;
+    if let Some(ticks) = clock_ticks {
+        state.clock = ticks;
+    }
+    if let Some(delta) = state.stop_in_ticks {
+        // Resolve the relative sleep timer against the unit clock we are
+        // about to transmit. Wraps past midnight (144 ticks per day).
+        state.stop_clock = Some(((state.clock as u16 + delta as u16) % TICKS_PER_DAY) as u8);
+        state.timer_mode = match state.timer_mode {
+            TimerMode::Start | TimerMode::StartStop => TimerMode::StartStop,
+            _ => TimerMode::Stop,
+        };
+    }
     let raw = build_state_bytes(state);
     Ok(Some(encode_broadlink_packet(&raw)))
+}
+
+/// Current local time as 10-minute ticks since midnight, the unit used by the
+/// Mitsubishi clock/timer bytes.
+pub fn current_clock_ticks() -> u8 {
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    (now.hour() * 6 + now.minute() / 10) as u8
 }
 
 fn parse_state_command(command: &str) -> Result<MitsubishiState, String> {
@@ -163,27 +198,32 @@ fn parse_state_command(command: &str) -> Result<MitsubishiState, String> {
                 state.i_see = parse_toggle(tokens.get(index).copied(), "isee")?;
                 index += 1;
             }
+            // `timer-off` cancels any programmed start/stop timer on the unit.
             "timer" => {
                 index += 1;
-                let timer_off = parse_toggle(tokens.get(index).copied(), "timer")?;
-                state.timer_mode = if timer_off {
-                    TimerMode::Start
-                } else {
-                    TimerMode::None
-                };
+                let timer_enabled = parse_toggle(tokens.get(index).copied(), "timer")?;
                 index += 1;
-                if !timer_off {
-                    state.start_clock = 0;
-                    state.stop_clock = 0;
+                if !timer_enabled {
+                    state.timer_mode = TimerMode::None;
+                    state.start_clock = None;
+                    state.stop_clock = None;
+                    state.stop_in_ticks = None;
                 }
             }
             "start" => {
                 index += 1;
-                state.start_clock = parse_clock(&tokens, &mut index)?;
+                state.start_clock = Some(parse_clock(&tokens, &mut index)?);
             }
             "stop" => {
                 index += 1;
-                state.stop_clock = parse_clock(&tokens, &mut index)?;
+                state.stop_clock = Some(parse_clock(&tokens, &mut index)?);
+            }
+            // Relative sleep timer: `stopin-<minutes>`, like the remote's
+            // "turn off in 1h/3h" buttons. Resolved at encode time.
+            "stopin" => {
+                index += 1;
+                state.stop_in_ticks = Some(parse_stop_in_minutes(tokens.get(index).copied())?);
+                index += 1;
             }
             token => {
                 return Err(format!(
@@ -193,7 +233,7 @@ fn parse_state_command(command: &str) -> Result<MitsubishiState, String> {
         }
     }
 
-    state.timer_mode = match (state.start_clock > 0, state.stop_clock > 0) {
+    state.timer_mode = match (state.start_clock.is_some(), state.stop_clock.is_some()) {
         (false, false) => state.timer_mode,
         (true, false) => TimerMode::Start,
         (false, true) => TimerMode::Stop,
@@ -299,6 +339,19 @@ fn parse_clock(tokens: &[&str], index: &mut usize) -> Result<u8, String> {
     Ok(hours * 6 + minutes / 10)
 }
 
+fn parse_stop_in_minutes(token: Option<&str>) -> Result<u8, String> {
+    let value = token.ok_or_else(|| "missing stopin minutes".to_string())?;
+    let minutes = value
+        .parse::<u16>()
+        .map_err(|_| format!("invalid stopin minutes '{value}'"))?;
+    if minutes == 0 || minutes % 10 != 0 || minutes >= 24 * 60 {
+        return Err(format!(
+            "stopin minutes must be a multiple of 10 below 1440, got '{value}'"
+        ));
+    }
+    Ok((minutes / 10) as u8)
+}
+
 fn expect_token(tokens: &[&str], index: usize, expected: &str) -> Result<(), String> {
     match tokens.get(index).copied() {
         Some(token) if token == expected => Ok(()),
@@ -316,8 +369,8 @@ fn build_state_bytes(state: MitsubishiState) -> [u8; MITSUBISHI_STATE_LEN] {
     bytes[8] = (wide_vane_byte(state.wide_vane) << 4) | mode_nibble(state.mode);
     bytes[9] = fan_byte(state.fan) | vane_byte(state.vane);
     bytes[10] = state.clock;
-    bytes[11] = state.stop_clock;
-    bytes[12] = state.start_clock;
+    bytes[11] = state.stop_clock.unwrap_or(0);
+    bytes[12] = state.start_clock.unwrap_or(0);
     bytes[13] = timer_mode_byte(state.timer_mode);
     bytes[14] = if state.ecocool { 0x20 } else { 0x00 };
     bytes[17] = checksum(&bytes);
@@ -448,12 +501,83 @@ mod tests {
     fn parses_state_command() {
         let packet = encode_mitsubishi_command(
             "state-cool-22-fan-2-vane-low-wide-center-econo-on-start-06-00-stop-11-00",
+            None,
         )
         .expect("command should parse")
         .expect("state command should generate");
 
         let decoded = STANDARD.encode(packet);
         assert!(!decoded.is_empty());
+    }
+
+    #[test]
+    fn clock_ticks_are_injected_into_the_frame() {
+        // 14:30 -> 14 * 6 + 3 = 87 ticks.
+        let mut state = parse_state_command("state-cool-20-fan-auto-vane-auto-wide-center-stop-23-50")
+            .expect("state command should parse");
+        state.clock = 87;
+        let bytes = build_state_bytes(state);
+
+        assert_eq!(bytes[10], 87);
+        assert_eq!(bytes[11], 23 * 6 + 5); // stop timer 23:50
+        assert_eq!(bytes[13], 0x03); // TimerMode::Stop
+        assert_eq!(bytes[17], checksum(&bytes));
+    }
+
+    #[test]
+    fn midnight_stop_timer_is_representable() {
+        let state = parse_state_command("state-cool-20-fan-auto-vane-auto-wide-center-stop-00-00")
+            .expect("state command should parse");
+        assert_eq!(state.stop_clock, Some(0));
+        assert_eq!(state.timer_mode, TimerMode::Stop);
+
+        let bytes = build_state_bytes(state);
+        assert_eq!(bytes[11], 0);
+        assert_eq!(bytes[13], 0x03); // the stop timer must still be armed
+    }
+
+    #[test]
+    fn relative_stop_timer_resolves_against_injected_clock() {
+        // Clock 23:00 (138 ticks) + stop in 3h (18 ticks) wraps to 02:00 (12).
+        let packet = encode_mitsubishi_command(
+            "state-cool-20-fan-auto-vane-auto-wide-center-stopin-180",
+            Some(138),
+        )
+        .expect("command should parse")
+        .expect("state command should generate");
+        assert!(!packet.is_empty());
+
+        let mut state = parse_state_command("state-cool-20-fan-auto-vane-auto-wide-center-stopin-180")
+            .expect("state command should parse");
+        assert_eq!(state.stop_in_ticks, Some(18));
+        state.clock = 138;
+        state.stop_clock = Some(((state.clock as u16 + 18) % TICKS_PER_DAY) as u8);
+        state.timer_mode = TimerMode::Stop;
+        let bytes = build_state_bytes(state);
+        assert_eq!(bytes[10], 138);
+        assert_eq!(bytes[11], 12);
+        assert_eq!(bytes[13], 0x03);
+    }
+
+    #[test]
+    fn stopin_rejects_invalid_durations() {
+        for command in [
+            "state-cool-20-fan-auto-vane-auto-wide-center-stopin-0",
+            "state-cool-20-fan-auto-vane-auto-wide-center-stopin-15",
+            "state-cool-20-fan-auto-vane-auto-wide-center-stopin-1440",
+        ] {
+            assert!(parse_state_command(command).is_err(), "{command} should be rejected");
+        }
+    }
+
+    #[test]
+    fn timer_off_cancels_programmed_timers() {
+        let state = parse_state_command(
+            "state-cool-20-fan-auto-vane-auto-wide-center-stop-11-00-timer-off",
+        )
+        .expect("state command should parse");
+        assert_eq!(state.timer_mode, TimerMode::None);
+        assert_eq!(state.stop_clock, None);
     }
 
     #[test]

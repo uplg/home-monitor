@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { House, Loader2 } from "lucide-react";
 
 export function LoginPage() {
@@ -44,8 +45,8 @@ export function LoginPage() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,hsl(193_77%_86%/.7),transparent_30%),radial-gradient(circle_at_85%_18%,hsl(36_100%_86%/.6),transparent_24%),linear-gradient(180deg,hsl(38_60%_98%),hsl(210_45%_98%))]" />
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <ThemeSwitcher />
         <LanguageSwitcher />
       </div>
       <Card className="relative w-full max-w-md border-border bg-card/88 shadow-[0_32px_100px_-36px_rgba(15,23,42,0.35)] backdrop-blur">

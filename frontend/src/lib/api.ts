@@ -704,6 +704,21 @@ export interface BroadlinkSendResponse {
   message: string;
 }
 
+export interface BroadlinkClimateState {
+  power: boolean;
+  lastCommand: string;
+  lastOnCommand: string | null;
+  host: string;
+  model: string | null;
+  updatedAt: string;
+}
+
+export interface BroadlinkClimateStateResponse {
+  success: boolean;
+  state: BroadlinkClimateState | null;
+  message: string;
+}
+
 export const broadlinkApi = {
   discover: (localIp?: string, forceRefresh = false) =>
     api<BroadlinkDiscoverResponse>(
@@ -716,6 +731,8 @@ export const broadlinkApi = {
     api<BroadlinkCodesResponse>(
       `/broadlink/mitsubishi/codes${model ? `?model=${encodeURIComponent(model)}` : ""}`,
     ),
+
+  getMitsubishiState: () => api<BroadlinkClimateStateResponse>("/broadlink/mitsubishi/state"),
 
   sendMitsubishiCommand: (host: string, command: string, model?: string, localIp?: string) =>
     api<BroadlinkSendResponse>("/broadlink/mitsubishi/send", {

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Loader2, RefreshCw, WifiOff } from "lucide-react";
@@ -37,11 +37,13 @@ interface StructuredState {
   vane: ClimateVane;
   econo: boolean;
   timerMode: ClimateTimerMode;
-  stopHour: string;
-  stopMinute: string;
+  /** Sleep-timer delay ("turn off in N minutes"), like the remote's 1h/3h buttons. */
+  stopAfterMinutes: number;
 }
 
 const DISCOVERY_TIMEOUT_MS = 120_000;
+// Multiples of 10 minutes only: the Mitsubishi timer works in 10-minute ticks.
+const STOP_AFTER_CHOICES = [30, 60, 120, 180, 300, 480, 720] as const;
 const INITIAL_STATE: StructuredState = {
   power: true,
   mode: "cool",
@@ -50,8 +52,7 @@ const INITIAL_STATE: StructuredState = {
   vane: "auto",
   econo: false,
   timerMode: "none",
-  stopHour: "11",
-  stopMinute: "00",
+  stopAfterMinutes: 180,
 };
 
 export function BroadlinkClimateControl({
@@ -71,6 +72,27 @@ export function BroadlinkClimateControl({
   useEffect(() => {
     setTempInput(String(structuredState.temperature));
   }, [structuredState.temperature]);
+
+  // Restore the last commanded state (persisted server-side) once on mount.
+  // One-shot by design: re-applying it later would clobber in-progress edits.
+  const hydratedRef = useRef(false);
+  const climateStateQuery = useQuery({
+    queryKey: ["broadlink", "mitsubishi", "state"],
+    queryFn: () => broadlinkApi.getMitsubishiState(),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+  useEffect(() => {
+    const stored = climateStateQuery.data?.state;
+    if (hydratedRef.current || !stored) return;
+    hydratedRef.current = true;
+    const restored = stored.lastOnCommand ? parseStructuredCommand(stored.lastOnCommand) : null;
+    if (restored) {
+      setStructuredState({ ...restored, power: stored.power });
+    } else if (!stored.power) {
+      setStructuredState((current) => ({ ...current, power: false }));
+    }
+  }, [climateStateQuery.data]);
 
   const discoverQuery = useQuery({
     queryKey: ["broadlink", "discover", "single-remote", forceRefreshToken],
@@ -353,30 +375,30 @@ export function BroadlinkClimateControl({
                   </Select>
                 </ControlBlock>
 
-                <ControlBlock label={t("climate.stopTime")}>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      value={structuredState.stopHour}
-                      className="rounded-2xl"
-                      onChange={(event) =>
+                {structuredState.timerMode === "stop" && (
+                  <ControlBlock label={t("climate.stopAfter")}>
+                    <Select
+                      value={String(structuredState.stopAfterMinutes)}
+                      onValueChange={(value) =>
                         setStructuredState((current) => ({
                           ...current,
-                          stopHour: sanitizeTimePart(event.target.value, 23),
+                          stopAfterMinutes: Number(value),
                         }))
                       }
-                    />
-                    <Input
-                      value={structuredState.stopMinute}
-                      className="rounded-2xl"
-                      onChange={(event) =>
-                        setStructuredState((current) => ({
-                          ...current,
-                          stopMinute: sanitizeMinutePart(event.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                </ControlBlock>
+                    >
+                      <SelectTrigger className="rounded-2xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STOP_AFTER_CHOICES.map((minutes) => (
+                          <SelectItem key={minutes} value={String(minutes)}>
+                            {formatDuration(minutes)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </ControlBlock>
+                )}
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -485,21 +507,82 @@ function buildStructuredCommand(state: StructuredState) {
   }
 
   if (state.timerMode === "stop") {
-    parts.push("stop", state.stopHour.padStart(2, "0"), state.stopMinute.padStart(2, "0"));
+    parts.push("stopin", String(state.stopAfterMinutes));
   }
 
   return parts.join("-");
 }
 
-function sanitizeTimePart(value: string, max: number) {
-  const digits = value.replace(/\D/g, "").slice(0, 2);
-  if (!digits) return "";
-  return String(Math.min(max, Number(digits))).padStart(2, "0");
+/**
+ * Inverse of buildStructuredCommand, used to restore the form from the last
+ * command persisted server-side. Returns null on anything it cannot map so
+ * the caller can fall back to defaults.
+ */
+function parseStructuredCommand(command: string): StructuredState | null {
+  if (command === "state-off") {
+    return { ...INITIAL_STATE, power: false };
+  }
+
+  const tokens = command.split("-");
+  if (tokens.length < 7 || tokens[0] !== "state") return null;
+  const [, mode, temperature, fanKeyword, fan, vaneKeyword, vane, ...rest] = tokens;
+  if (fanKeyword !== "fan" || vaneKeyword !== "vane") return null;
+  if (!isClimateMode(mode) || !isClimateFan(fan) || !isClimateVane(vane)) return null;
+  const parsedTemperature = Number(temperature);
+  if (!Number.isInteger(parsedTemperature)) return null;
+
+  const state: StructuredState = {
+    ...INITIAL_STATE,
+    power: true,
+    mode,
+    temperature: Math.min(31, Math.max(16, parsedTemperature)),
+    fan,
+    vane,
+  };
+
+  for (let index = 0; index < rest.length;) {
+    switch (rest[index]) {
+      case "wide":
+        index += 2; // the form always sends wide-center; ignore the value
+        break;
+      case "econo":
+        state.econo = rest[index + 1] === "on";
+        index += 2;
+        break;
+      case "stopin": {
+        const minutes = Number(rest[index + 1]);
+        if (Number.isInteger(minutes) && minutes > 0) {
+          state.timerMode = "stop";
+          state.stopAfterMinutes = minutes;
+        }
+        index += 2;
+        break;
+      }
+      default:
+        // Unknown token (absolute stop/start timers, isee, …): not produced
+        // by this form, so give up rather than restore a wrong state.
+        return null;
+    }
+  }
+
+  return state;
 }
 
-function sanitizeMinutePart(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 2);
-  if (!digits) return "";
-  const numeric = Math.min(59, Number(digits));
-  return String(numeric - (numeric % 10)).padStart(2, "0");
+function isClimateMode(value: string): value is ClimateMode {
+  return ["cool", "heat", "dry", "fan", "auto"].includes(value);
+}
+
+function isClimateFan(value: string): value is ClimateFan {
+  return ["auto", "1", "2", "3", "4", "silent"].includes(value);
+}
+
+function isClimateVane(value: string): value is ClimateVane {
+  return ["auto", "highest", "high", "middle", "low", "lowest", "swing"].includes(value);
+}
+
+function formatDuration(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours} h` : `${hours} h ${String(remainder).padStart(2, "0")}`;
 }

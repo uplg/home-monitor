@@ -14,24 +14,25 @@ argon2 = "0.5.3"
 async-trait = "0.1.89"
 axum = "0.8.9"
 axum-extra = { version = "0.12.6", features = ["cookie"] }
-base64 = "0.22.1"
+base64 = "0.23.1"
 btleplug = { version = "0.12.0", optional = true }
 chrono = { version = "0.4.44", features = ["clock", "serde"] }
 chrono-tz = "0.10.4"
 dotenvy = "0.15.7"
-# ashv2 and silizium match the source specifiers used by ezsp's Cargo.toml to
-# avoid duplicate crate entries. The lockfile pins exact commit SHAs.
-# ezsp and rust-async-tuyapi are pinned directly to commit revisions.
-ashv2 = { git = "https://github.com/uplg/ashv2/", branch = "main", version = "7.0.0" }
-ezsp = { git = "https://github.com/uplg/ezsp", rev = "aa769b1c0d7dcd1ceb476987b166b0d4ae53e1ac", version = "3.0.0", features = ["ashv2"] }
-silizium = { version = "2", git = "https://github.com/PaulmannLighting/silizium/", features = ["le-stream"] }
+# The uplg forks track upstream (PaulmannLighting) plus robustness fixes and
+# the EZSP <= v13 legacy importTransientKey wire format for the MG21 dongle.
+# ashv2's `ezsp` feature provides the Transmit/Receive adapters; the ezsp
+# crate itself resolves through [patch.crates-io] below so both the direct
+# dependency and ashv2's internal one use the same patched source.
+ashv2 = { git = "https://github.com/uplg/ashv2/", branch = "upstream-sync", version = "12.0.0", features = ["ezsp"] }
+ezsp = "15.0.0"
+silizium = { version = "3", features = ["le-stream"] }
 futures = "0.3.32"
 heapless = "0.9"
-jsonwebtoken = { version = "10.4.0", default-features = false, features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust_crypto"] }
 md5 = "0.8.0"
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "query", "rustls", "form"] }
 rbroadlink = "0.4.2"
-rumqttc = "0.25.1"
 rust-async-tuyapi = { git = "https://github.com/uplg/rust-async-tuyapi", rev = "b4f3b0c31f47d251c7e13585a8ce1babda984332" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
@@ -39,7 +40,7 @@ thiserror = "2.0.18"
 time = "0.3.47"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal", "net", "sync", "time"] }
 tokio-serial = "5.4.5"
-tower-http = { version = "0.6.11", features = ["cors", "fs", "trace"] }
+tower-http = { version = "0.7.0", features = ["cors", "fs", "timeout", "trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 uuid = { version = "1.23.1", features = ["v4"] }
@@ -49,3 +50,6 @@ bytes = "1.10.1"
 tempfile = "3.27.0"
 tower = "0.5.3"
 uuid = { version = "1.23.1", features = ["v4"] }
+
+[patch.crates-io]
+ezsp = { git = "https://github.com/uplg/ezsp", branch = "upstream-sync" }

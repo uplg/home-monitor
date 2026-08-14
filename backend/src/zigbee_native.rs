@@ -1,9 +1,10 @@
-use std::{collections::HashMap, sync::Arc, time::Duration as StdDuration};
+use std::{collections::HashMap, num::NonZero, sync::Arc, time::Duration as StdDuration};
 
-use ashv2::{Actor as AshActor, BaudRate, FlowControl, NativeSerialPort, Payload, Tasks as AshTasks, open as open_ash_serial};
+use ashv2::{Payload, ezsp::Receiver as AshEzspReceiver, start as start_ash};
 use chrono::Utc;
 use ezsp::{
-    Callback, Configuration, Ezsp, Messaging, Networking, Security, Utilities, Zll,
+    Callback, Client as EzspClient, Configuration, Connection as EzspConnection, Messaging,
+    Networking, Security, Utilities, Zll,
     ember::{
         Eui64, NodeId,
         aps::{Frame as EzspApsFrame, Options as EzspApsOptions},
@@ -18,8 +19,8 @@ use ezsp::{
     },
     ezsp::{config, decision, network::InitBitmask as NetworkInitBitmask, policy, value, zll::NetworkOperation as ZllNetworkOperation},
     parameters,
-    uart::Uart as EzspUart,
 };
+use tokio_serial::SerialPortBuilderExt;
 use tokio::{
     sync::{Mutex, RwLock, mpsc, oneshot},
     task::JoinHandle,
@@ -34,8 +35,8 @@ use axum::http::StatusCode;
 use crate::error::AppError;
 
 const DEFAULT_EZSP_PROTOCOL_VERSION: u8 = 13;
-const EZSP_CHANNEL_SIZE: usize = 64;
-const EZSP_INIT_TIMEOUT: StdDuration = StdDuration::from_secs(5);
+const EZSP_CHANNEL_SIZE: usize = 256;
+const EZSP_INIT_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 const POLL_INTERVAL: StdDuration = StdDuration::from_millis(200);
 const DISCOVERY_RETRY_INTERVAL_TICKS: u32 = 10;
 const ZDO_PROFILE_ID: u16 = 0x0000;
@@ -91,7 +92,7 @@ const REMOTE_DEDUP_WINDOW: StdDuration = StdDuration::from_secs(3);
 const DEFAULT_STACK_PROFILE: u16 = 2;
 const DEFAULT_SECURITY_LEVEL: u16 = 5;
 const DEFAULT_NETWORK_CHANNEL: u8 = 11;
-const DEFAULT_NETWORK_TX_POWER: u8 = 8;
+const DEFAULT_NETWORK_TX_POWER: i8 = 8;
 const DEFAULT_LOCAL_INPUT_CLUSTERS: &[u16] = &[0x0000, 0x0006, 0x0008, 0x0300, 0x0403, 0x0201, 0xFC00];
 const DEFAULT_LOCAL_OUTPUT_CLUSTERS: &[u16] = &[0x0000, 0x0006, 0x0008, 0x0300, 0x0403];
 const ZIGBEE_ALLIANCE09_LINK_KEY: EmberKeyData = *b"ZigBeeAlliance09";
@@ -154,10 +155,30 @@ const WATCHDOG_TIMEOUT: StdDuration = StdDuration::from_secs(180);
 /// reuse a desynchronised EZSP channel.
 const EZSP_COMMAND_TIMEOUT: StdDuration = StdDuration::from_secs(15);
 
+/// Touchlink scans legitimately run two 15-second radio passes plus
+/// per-device delays, so they get a larger budget than regular commands.
+const TOUCHLINK_COMMAND_TIMEOUT: StdDuration = StdDuration::from_secs(90);
+
+/// Upper bound for the full network bring-up (endpoint + stack configuration,
+/// network init/form, security state). Prevents the driver from being stuck
+/// in `Starting` forever when the NCP hangs mid-initialization.
+const NETWORK_INIT_TIMEOUT: StdDuration = StdDuration::from_secs(60);
+
+/// Upper bound a caller of `NativeZigbeeRuntime::send` may wait for the reply.
+/// Must exceed the worst per-command driver timeout plus queueing behind other
+/// commands; it exists so HTTP handlers can never hang indefinitely.
+const COMMAND_REPLY_TIMEOUT: StdDuration = StdDuration::from_secs(120);
+
 /// Delay before attempting to reconnect after a pipeline failure.
 const RECONNECT_DELAY: StdDuration = StdDuration::from_secs(2);
 
-/// Maximum number of consecutive reconnect attempts before giving up.
+/// Longest delay between reconnect attempts once backoff has kicked in.
+const MAX_RECONNECT_DELAY: StdDuration = StdDuration::from_secs(300);
+
+/// After this many consecutive failed attempts the driver reports
+/// `DriverLifecycle::Failed` (so API calls fail fast with the underlying
+/// error), but it KEEPS retrying in the background — the radio must never
+/// require a process restart to come back.
 const MAX_RECONNECT_ATTEMPTS: u32 = 10;
 
 #[derive(Debug, Clone)]
@@ -376,13 +397,23 @@ impl NativeZigbeeRuntime {
         }
 
         let (reply_tx, reply_rx) = oneshot::channel();
-        self.command_tx
-            .send(DriverRequest { command, reply_tx })
-            .await
-            .map_err(|_| AppError::service_unavailable("Native Zigbee driver task is not running"))?;
+        // Both steps are bounded so an HTTP caller can never hang forever,
+        // even if the driver event loop wedges while reporting Ready.
+        timeout(
+            COMMAND_REPLY_TIMEOUT,
+            self.command_tx.send(DriverRequest { command, reply_tx }),
+        )
+        .await
+        .map_err(|_| {
+            AppError::service_unavailable("Native Zigbee driver is not accepting commands (queue full)")
+        })?
+        .map_err(|_| AppError::service_unavailable("Native Zigbee driver task is not running"))?;
 
-        reply_rx
+        timeout(COMMAND_REPLY_TIMEOUT, reply_rx)
             .await
+            .map_err(|_| {
+                AppError::service_unavailable("Native Zigbee driver did not answer in time")
+            })?
             .map_err(|_| AppError::service_unavailable("Native Zigbee driver dropped the command response"))?
     }
 
@@ -417,10 +448,45 @@ impl NativeZigbeeRuntime {
     }
 }
 
+/// Join handles for the four pipeline tasks (ASH transmitter/receiver and
+/// EZSP transmitter/receiver actors). All spawned by us, so teardown is a
+/// bounded abort + join.
+struct PipelineTasks {
+    ash_transmitter: JoinHandle<()>,
+    ash_receiver: JoinHandle<()>,
+    ezsp_transmitter: JoinHandle<()>,
+    ezsp_receiver: JoinHandle<()>,
+}
+
+impl PipelineTasks {
+    /// All four tasks must be running for the pipeline to be usable; any
+    /// finished task (serial unplug, channel closure, panic) means the whole
+    /// stack must be rebuilt.
+    fn is_alive(&self) -> bool {
+        !self.ash_transmitter.is_finished()
+            && !self.ash_receiver.is_finished()
+            && !self.ezsp_transmitter.is_finished()
+            && !self.ezsp_receiver.is_finished()
+    }
+
+    async fn shutdown(self) {
+        for handle in [
+            self.ezsp_transmitter,
+            self.ezsp_receiver,
+            self.ash_transmitter,
+            self.ash_receiver,
+        ] {
+            handle.abort();
+            let _ = handle.await;
+        }
+    }
+
+}
+
 struct EzspContext {
-    uart: EzspUart,
-    ash_tasks: AshTasks<NativeSerialPort>,
-    callbacks_rx: mpsc::UnboundedReceiver<Callback>,
+    connection: EzspConnection,
+    tasks: PipelineTasks,
+    callbacks_rx: mpsc::Receiver<Callback>,
     joined_devices: Vec<DiscoveredDevice>,
     next_global_sequence: u8,
     next_device_sequence: HashMap<u16, u8>,
@@ -601,66 +667,42 @@ async fn run_native_driver(
             Ok(context) => context,
             Err(error) => {
                 reconnect_attempts += 1;
-                if reconnect_attempts > MAX_RECONNECT_ATTEMPTS {
-                    error!(
-                        adapter = %adapter,
-                        serial_port = %serial_port,
-                        attempts = reconnect_attempts,
-                        error = %error,
-                        "exhausted reconnect attempts — giving up"
-                    );
-                    set_status(
-                        &status,
-                        Some(format!("Failed to open native Zigbee adapter {adapter} on {serial_port}")),
-                        Some(error.to_string()),
-                    )
-                    .await;
-                    *lifecycle.write().await = DriverLifecycle::Failed(error.to_string());
-                    drain_pending_requests(&mut command_rx, error).await;
-                    return;
-                }
                 warn!(
                     adapter = %adapter,
                     serial_port = %serial_port,
                     attempt = reconnect_attempts,
                     error = %error,
-                    "failed to open EZSP context — retrying in {:?}",
-                    RECONNECT_DELAY,
+                    "failed to open EZSP context — retrying"
                 );
-                set_status(
+                backoff_before_retry(
                     &status,
-                    Some(format!("Reconnecting native Zigbee on {serial_port} (attempt {reconnect_attempts})")),
-                    Some(error.to_string()),
+                    &lifecycle,
+                    &serial_port,
+                    reconnect_attempts,
+                    error.to_string(),
                 )
                 .await;
-                tokio::time::sleep(RECONNECT_DELAY).await;
                 continue 'reconnect;
             }
         };
 
         context.joined_devices = saved_devices.clone();
 
-        let network_state = match ensure_coordinator_network(&mut context, &serial_port).await {
+        // The full bring-up is bounded: a hung NCP mid-initialization must
+        // not leave the driver in `Starting` forever with no watchdog.
+        let network_state = match timeout(
+            NETWORK_INIT_TIMEOUT,
+            ensure_coordinator_network(&mut context, &serial_port),
+        )
+        .await
+        .unwrap_or_else(|_elapsed| {
+            Err(AppError::service_unavailable(format!(
+                "Native Zigbee network bring-up timed out after {NETWORK_INIT_TIMEOUT:?}"
+            )))
+        }) {
             Ok(state) => state,
             Err(error) => {
                 reconnect_attempts += 1;
-                if reconnect_attempts > MAX_RECONNECT_ATTEMPTS {
-                    error!(
-                        serial_port = %serial_port,
-                        attempts = reconnect_attempts,
-                        error = %error,
-                        "exhausted reconnect attempts during network init — giving up"
-                    );
-                    set_status(
-                        &status,
-                        Some(format!("Failed to initialize native Zigbee network on {serial_port}")),
-                        Some(error.to_string()),
-                    )
-                    .await;
-                    *lifecycle.write().await = DriverLifecycle::Failed(error.to_string());
-                    drain_pending_requests(&mut command_rx, error).await;
-                    return;
-                }
                 warn!(
                     serial_port = %serial_port,
                     attempt = reconnect_attempts,
@@ -668,7 +710,14 @@ async fn run_native_driver(
                     "network init failed — tearing down and retrying"
                 );
                 teardown_context(context).await;
-                tokio::time::sleep(RECONNECT_DELAY).await;
+                backoff_before_retry(
+                    &status,
+                    &lifecycle,
+                    &serial_port,
+                    reconnect_attempts,
+                    error.to_string(),
+                )
+                .await;
                 continue 'reconnect;
             }
         };
@@ -708,20 +757,21 @@ async fn run_native_driver(
                     // pipeline is assumed dead — we tear everything down and
                     // reconnect.  This is safe because we never reuse the
                     // pipeline after a timeout.
-                    let result = match timeout(EZSP_COMMAND_TIMEOUT, handle_command(&mut context, request.command)).await {
+                    let command_timeout = command_timeout_for(&request.command);
+                    let result = match timeout(command_timeout, handle_command(&mut context, request.command)).await {
                         Ok(inner_result) => inner_result,
                         Err(_elapsed) => {
                             error!(
                                 serial_port = %serial_port,
                                 "EZSP command timed out after {:?} — triggering reconnect",
-                                EZSP_COMMAND_TIMEOUT,
+                                command_timeout,
                             );
                             let _ = request.reply_tx.send(Err(AppError::service_unavailable(
                                 "EZSP command timed out — reconnecting pipeline",
                             )));
                             break 'event_loop Some(format!(
                                 "EZSP command timed out after {:?}",
-                                EZSP_COMMAND_TIMEOUT,
+                                command_timeout,
                             ));
                         }
                     };
@@ -795,9 +845,21 @@ async fn run_native_driver(
                     }
 
                     // --- Drain callbacks ---
+                    // Each callback may issue EZSP round-trips (discovery,
+                    // binding, broadcasts), so it gets the same timeout as a
+                    // command: a hung callback must not freeze the event loop
+                    // while the lifecycle still reports Ready.
                     while let Ok(callback) = context.callbacks_rx.try_recv() {
                         context.last_activity = Instant::now();
-                        if let Some(event) = handle_callback(&mut context, callback).await {
+                        let handled = match timeout(EZSP_COMMAND_TIMEOUT, handle_callback(&mut context, callback)).await {
+                            Ok(handled) => handled,
+                            Err(_elapsed) => {
+                                break 'event_loop Some(format!(
+                                    "EZSP callback handling timed out after {EZSP_COMMAND_TIMEOUT:?}"
+                                ));
+                            }
+                        };
+                        if let Some(event) = handled {
                             debug!(event = ?event, "native zigbee callback handled");
                             match event {
                                 NativeZigbeeEvent::NetworkState { status: network_status } => {
@@ -844,7 +906,10 @@ async fn run_native_driver(
                         {
                             // Device state changed — sync to frontend and try to
                             // restore desired state on newly-reachable devices.
-                            restore_desired_state(&mut context).await;
+                            // Bounded: this issues EZSP round-trips per device.
+                            if timeout(EZSP_COMMAND_TIMEOUT, restore_desired_state(&mut context)).await.is_err() {
+                                break 'event_loop Some("desired-state restore timed out".to_string());
+                            }
                             sync_status_devices(&status, &context.joined_devices).await;
                         }
                     }
@@ -857,47 +922,64 @@ async fn run_native_driver(
             saved_devices = context.joined_devices.clone();
             reconnect_attempts += 1;
 
-            if reconnect_attempts > MAX_RECONNECT_ATTEMPTS {
-                error!(
-                    serial_port = %serial_port,
-                    reason = %reason,
-                    attempts = reconnect_attempts,
-                    "exhausted reconnect attempts — giving up"
-                );
-                teardown_context(context).await;
-                *lifecycle.write().await = DriverLifecycle::Failed(format!("Pipeline died: {reason}"));
-                set_status(
-                    &status,
-                    Some(format!("Native Zigbee pipeline died on {serial_port}: {reason}")),
-                    Some(reason),
-                )
-                .await;
-                drain_pending_requests(
-                    &mut command_rx,
-                    AppError::service_unavailable("EZSP pipeline died and reconnect attempts exhausted"),
-                )
-                .await;
-                return;
-            }
-
             warn!(
                 serial_port = %serial_port,
                 reason = %reason,
                 attempt = reconnect_attempts,
                 "EZSP pipeline unhealthy — tearing down and reconnecting"
             );
-            set_status(
-                &status,
-                Some(format!("Reconnecting native Zigbee on {serial_port}: {reason} (attempt {reconnect_attempts})")),
-                Some(reason),
-            )
-            .await;
-            *lifecycle.write().await = DriverLifecycle::Starting;
-
             teardown_context(context).await;
-            tokio::time::sleep(RECONNECT_DELAY).await;
+            backoff_before_retry(&status, &lifecycle, &serial_port, reconnect_attempts, reason)
+                .await;
             // continue 'reconnect — the outer loop re-opens the context
         }
+    }
+}
+
+/// Update lifecycle/status and sleep before the next reconnect attempt.
+///
+/// The driver NEVER gives up permanently: early attempts keep the lifecycle
+/// in `Starting` with a short delay; past `MAX_RECONNECT_ATTEMPTS` the
+/// lifecycle flips to `Failed` so API calls fail fast with the underlying
+/// error, while the loop keeps retrying with capped exponential backoff.
+async fn backoff_before_retry(
+    status: &Arc<RwLock<NativeZigbeeStatus>>,
+    lifecycle: &Arc<RwLock<DriverLifecycle>>,
+    serial_port: &str,
+    attempts: u32,
+    reason: String,
+) {
+    let exponent = attempts.saturating_sub(1).min(8);
+    let delay = RECONNECT_DELAY
+        .saturating_mul(1_u32 << exponent)
+        .min(MAX_RECONNECT_DELAY);
+
+    *lifecycle.write().await = if attempts > MAX_RECONNECT_ATTEMPTS {
+        DriverLifecycle::Failed(format!(
+            "Native Zigbee unavailable on {serial_port} ({reason}); still retrying every {delay:?}"
+        ))
+    } else {
+        DriverLifecycle::Starting
+    };
+
+    set_status(
+        status,
+        Some(format!(
+            "Reconnecting native Zigbee on {serial_port} (attempt {attempts}, next try in {delay:?})"
+        )),
+        Some(reason),
+    )
+    .await;
+
+    tokio::time::sleep(delay).await;
+}
+
+/// Per-command timeout: touchlink scans are legitimately long-running, all
+/// other commands are single EZSP round-trip sequences.
+fn command_timeout_for(command: &NativeZigbeeCommand) -> StdDuration {
+    match command {
+        NativeZigbeeCommand::TouchlinkScan => TOUCHLINK_COMMAND_TIMEOUT,
+        _ => EZSP_COMMAND_TIMEOUT,
     }
 }
 
@@ -907,9 +989,9 @@ async fn open_ezsp_context(serial_port: &str) -> Result<EzspContext, AppError> {
         .and_then(|value| value.parse::<u8>().ok())
         .unwrap_or(DEFAULT_EZSP_PROTOCOL_VERSION);
     let attempts = [
-        (BaudRate::RstCts, FlowControl::None, "no-flow-control"),
-        (BaudRate::XOnXOff, FlowControl::Software, "xon-xoff"),
-        (BaudRate::RstCts, FlowControl::Hardware, "rst-cts"),
+        (115_200_u32, tokio_serial::FlowControl::None, "no-flow-control"),
+        (57_600_u32, tokio_serial::FlowControl::Software, "xon-xoff"),
+        (115_200_u32, tokio_serial::FlowControl::Hardware, "rts-cts"),
     ];
 
     let mut last_error = None;
@@ -932,41 +1014,102 @@ async fn open_ezsp_context(serial_port: &str) -> Result<EzspContext, AppError> {
 
 async fn try_open_ezsp_context(
     serial_port: &str,
-    baud_rate: BaudRate,
-    flow_control: FlowControl,
+    baud_rate: u32,
+    flow_control: tokio_serial::FlowControl,
     mode_label: &str,
     protocol_version: u8,
 ) -> Result<EzspContext, AppError> {
-    let serial = open_ash_serial(serial_port, baud_rate, flow_control)
-        .map_err(|error| AppError::service_unavailable(format!(
-            "Unable to open Zigbee serial port {serial_port} in {mode_label} mode: {error}"
-        )))?;
+    let mut desired_version = NonZero::new(protocol_version).ok_or_else(|| {
+        AppError::service_unavailable("ZIGBEE_EZSP_PROTOCOL_VERSION must be non-zero")
+    })?;
 
-    let (payload_tx, payload_rx) = mpsc::unbounded_channel::<Payload>();
-    let (callback_tx, callback_rx) = mpsc::unbounded_channel::<Callback>();
-    let actor = AshActor::new(serial, payload_tx, EZSP_CHANNEL_SIZE)
-        .map_err(|error| AppError::service_unavailable(format!(
-            "Unable to create ASH actor for {serial_port} in {mode_label} mode: {error}"
-        )))?;
-    let (tasks, proxy) = actor.spawn();
+    // Version negotiation is strict upstream: the NCP must report exactly the
+    // requested protocol version. On mismatch (e.g. after a firmware upgrade)
+    // we rebuild the pipeline once with the version the NCP announced, so the
+    // driver adapts to the dongle without config changes.
+    let (connection, callbacks_rx, tasks) = 'negotiate: {
+        let mut last_error: Option<AppError> = None;
 
-    let mut uart = EzspUart::new(proxy, payload_rx, callback_tx, protocol_version, EZSP_CHANNEL_SIZE);
-    info!(serial_port = %serial_port, mode = %mode_label, protocol_version, "initializing EZSP UART");
-    timeout(EZSP_INIT_TIMEOUT, uart.init())
-        .await
-        .map_err(|_| AppError::service_unavailable(format!(
-            "Timed out initializing EZSP on {serial_port} in {mode_label} mode"
-        )))?
-        .map_err(|error| AppError::service_unavailable(format!(
-            "Unable to initialize EZSP on {serial_port} in {mode_label} mode: {error}"
-        )))?;
+        for attempt in 0..2 {
+            let stream = tokio_serial::new(serial_port, baud_rate)
+                .flow_control(flow_control)
+                .open_native_async()
+                .map_err(|error| AppError::service_unavailable(format!(
+                    "Unable to open Zigbee serial port {serial_port} in {mode_label} mode: {error}"
+                )))?;
 
-    info!(serial_port = %serial_port, mode = %mode_label, "EZSP UART initialized");
+            let (reader, writer) = tokio::io::split(stream);
+            let (payload_tx, payload_rx) = mpsc::channel::<Payload>(EZSP_CHANNEL_SIZE);
+            let (ash_handle, ash_futures) = start_ash(reader, writer, payload_tx);
+            let (client, ezsp_futures) = EzspClient::run(
+                ash_handle,
+                AshEzspReceiver::new(payload_rx),
+                EZSP_CHANNEL_SIZE,
+            );
+
+            let tasks = PipelineTasks {
+                ash_transmitter: tokio::spawn(ash_futures.transmitter),
+                ash_receiver: tokio::spawn(ash_futures.receiver),
+                ezsp_transmitter: tokio::spawn(ezsp_futures.transmitter),
+                ezsp_receiver: tokio::spawn(ezsp_futures.receiver),
+            };
+
+            info!(
+                serial_port = %serial_port,
+                mode = %mode_label,
+                protocol_version = desired_version.get(),
+                "negotiating EZSP protocol version"
+            );
+            match timeout(EZSP_INIT_TIMEOUT, client.connect(desired_version)).await {
+                Ok(Ok((connection, callbacks_rx))) => {
+                    break 'negotiate (connection, callbacks_rx, tasks);
+                }
+                Ok(Err(error)) => {
+                    tasks.shutdown().await;
+                    if attempt == 0 {
+                        if let ezsp::Error::ProtocolVersionMismatch { negotiated, .. } = &error {
+                            let announced = NonZero::new(negotiated.protocol_version())
+                                .filter(|version| *version != desired_version);
+                            if let Some(version) = announced {
+                                warn!(
+                                    serial_port = %serial_port,
+                                    desired = desired_version.get(),
+                                    negotiated = version.get(),
+                                    "NCP reports a different EZSP protocol version — retrying with it"
+                                );
+                                desired_version = version;
+                                continue;
+                            }
+                        }
+                    }
+                    last_error = Some(AppError::service_unavailable(format!(
+                        "Unable to initialize EZSP on {serial_port} in {mode_label} mode: {error}"
+                    )));
+                    break;
+                }
+                Err(_elapsed) => {
+                    tasks.shutdown().await;
+                    last_error = Some(AppError::service_unavailable(format!(
+                        "Timed out initializing EZSP on {serial_port} in {mode_label} mode"
+                    )));
+                    break;
+                }
+            }
+        }
+
+        return Err(last_error.unwrap_or_else(|| {
+            AppError::service_unavailable(format!(
+                "Unable to initialize EZSP on {serial_port} in {mode_label} mode"
+            ))
+        }));
+    };
+
+    info!(serial_port = %serial_port, mode = %mode_label, "EZSP connection established");
 
     Ok(EzspContext {
-        uart,
-        ash_tasks: tasks,
-        callbacks_rx: callback_rx,
+        connection,
+        tasks,
+        callbacks_rx,
         joined_devices: Vec::new(),
         next_global_sequence: 1,
         next_device_sequence: HashMap::new(),
@@ -1020,16 +1163,14 @@ async fn ensure_coordinator_network(
     configure_local_endpoint(context).await?;
     configure_stack(context).await?;
 
-    if let Err(error) = context
-        .uart
+    if let Err(error) = context.connection
         .network_init(NetworkInitBitmask::PARENT_INFO_IN_TOKEN)
         .await
     {
         warn!(serial_port = %serial_port, error = %error, "ezsp network_init failed");
     }
 
-    let mut state = context
-        .uart
+    let mut state = context.connection
         .network_state()
         .await
         .map_err(map_ezsp_error("read network state"))?;
@@ -1047,7 +1188,7 @@ async fn ensure_coordinator_network(
         // behavior.
         info!(serial_port = %serial_port, "refreshing trust center security state on existing network");
         match ezsp::Security::set_initial_security_state(
-            &mut context.uart,
+            &mut context.connection,
             build_initial_security_state(),
         )
         .await
@@ -1063,7 +1204,7 @@ async fn ensure_coordinator_network(
     log_network_parameters(context, serial_port).await?;
 
     // Fetch and cache the coordinator's own EUI64 — needed for ZDO Bind_req.
-    match context.uart.get_eui64().await {
+    match context.connection.get_eui64().await {
         Ok(eui64) => {
             info!(eui64 = %format_eui64(eui64), "coordinator EUI64 cached");
             context.coordinator_eui64 = Some(eui64);
@@ -1076,27 +1217,26 @@ async fn ensure_coordinator_network(
     Ok(state)
 }
 
-/// Gracefully tear down the EZSP pipeline.  Aborts the EZSP splitter task and
-/// terminates the ASH transmitter/receiver tasks.  This ensures no orphaned
-/// background tasks leak when we reconnect.
+/// Tear down the EZSP pipeline: abort and join the four actor tasks and drop
+/// the connection/serial handles. Bounded by construction (aborted tasks
+/// resolve immediately), so no orphaned background tasks leak when we
+/// reconnect and teardown can never hang the driver.
 async fn teardown_context(context: EzspContext) {
     info!("tearing down EZSP pipeline");
-    // First abort the EZSP splitter (consumes uart).
-    if let Err(error) = context.uart.abort().await {
-        warn!(error = ?error, "EZSP splitter abort returned an error (non-fatal)");
-    }
-    // Then terminate ASH actor tasks (transmitter + receiver).
-    if let Err(error) = context.ash_tasks.terminate().await {
-        warn!(error = ?error, "ASH tasks termination returned an error (non-fatal)");
-    }
+    let EzspContext { connection, tasks, callbacks_rx, .. } = context;
+    // Dropping the connection and callback receiver closes the actor
+    // channels; aborting makes the teardown immediate regardless of state.
+    drop(connection);
+    drop(callbacks_rx);
+    tasks.shutdown().await;
     info!("EZSP pipeline torn down");
 }
 
 /// Check whether the EZSP pipeline is healthy.  Returns a human-readable reason
 /// if the pipeline should be torn down and rebuilt.
 fn check_pipeline_health(context: &EzspContext) -> Option<&'static str> {
-    if !context.ash_tasks.is_alive() {
-        return Some("ASH transport task(s) died");
+    if !context.tasks.is_alive() {
+        return Some("EZSP pipeline task(s) died");
     }
     if context.last_activity.elapsed() > WATCHDOG_TIMEOUT {
         return Some("EZSP watchdog timeout — no activity");
@@ -1105,8 +1245,7 @@ fn check_pipeline_health(context: &EzspContext) -> Option<&'static str> {
 }
 
 async fn configure_local_endpoint(context: &mut EzspContext) -> Result<(), AppError> {
-    context
-        .uart
+    context.connection
         .add_endpoint(
             DEFAULT_SOURCE_ENDPOINT,
             HOME_AUTOMATION_PROFILE_ID,
@@ -1120,21 +1259,18 @@ async fn configure_local_endpoint(context: &mut EzspContext) -> Result<(), AppEr
 }
 
 async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
-    context
-        .uart
+    context.connection
         .set_configuration_value(config::Id::StackProfile, DEFAULT_STACK_PROFILE)
         .await
         .map_err(map_ezsp_error("set stack profile"))?;
-    context
-        .uart
+    context.connection
         .set_configuration_value(config::Id::SecurityLevel, DEFAULT_SECURITY_LEVEL)
         .await
         .map_err(map_ezsp_error("set security level"))?;
 
     // Allow sleepy end devices (remotes, sensors) to join as children.
     // Default may be 0 on some firmware — explicitly set a reasonable limit.
-    context
-        .uart
+    context.connection
         .set_configuration_value(config::Id::MaxEndDeviceChildren, 16)
         .await
         .map_err(map_ezsp_error("set max end device children"))?;
@@ -1142,8 +1278,7 @@ async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
     // End device poll timeout: value 8 = 2^8 = 256 minutes (~4 hours).
     // Sleepy devices that don't poll within this window are removed from the
     // child table.  Remotes poll infrequently, so be generous.
-    context
-        .uart
+    context.connection
         .set_configuration_value(config::Id::EndDevicePollTimeout, 8)
         .await
         .map_err(map_ezsp_error("set end device poll timeout"))?;
@@ -1154,8 +1289,7 @@ async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
     // the joiner's link key (the well-known key imported into the transient
     // table at permit-join time).  This matches the Zigbee2MQTT Ember adapter
     // policy: bitmask 0x03.
-    context
-        .uart
+    context.connection
         .set_policy(
             policy::Id::TrustCenter,
             (decision::Bitmask::ALLOW_JOINS | decision::Bitmask::ALLOW_UNSECURED_REJOINS).bits(),
@@ -1164,8 +1298,7 @@ async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
         .map_err(map_ezsp_error("set trust center policy"))?;
 
     // Allow devices to request the Trust Center link key (needed for Zigbee 3.0).
-    context
-        .uart
+    context.connection
         .set_policy(
             policy::Id::TcKeyRequest,
             u8::from(decision::Id::AllowTcKeyRequestsAndSendCurrentKey),
@@ -1176,23 +1309,20 @@ async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
     // Allow Trust Center rejoins using the well-known "ZigBeeAlliance09" key.
     // The Hue Dimmer v1 (and many Zigbee 3.0 devices) use this key after factory reset.
     // Value 0x01 = allow; timeout is controlled by TcRejoinsUsingWellKnownKeyTimeoutSec.
-    context
-        .uart
+    context.connection
         .set_policy(policy::Id::TcJoinsUsingWellKnownKey, 0x01u8)
         .await
         .map_err(map_ezsp_error("set TC well-known key rejoin policy"))?;
 
     // Set the well-known key rejoin timeout to 600 seconds (10 minutes).
-    context
-        .uart
+    context.connection
         .set_configuration_value(config::Id::TcRejoinsUsingWellKnownKeyTimeoutSec, 600)
         .await
         .map_err(map_ezsp_error("set TC well-known key rejoin timeout"))?;
 
     // Deny application key requests (matches Z2M: DENY_APP_KEY_REQUESTS).
     // Application link keys between devices are not needed for our use case.
-    context
-        .uart
+    context.connection
         .set_policy(
             policy::Id::AppKeyRequest,
             u8::from(decision::Id::DenyAppKeyRequests),
@@ -1202,9 +1332,8 @@ async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
 
     // Set the transient key timeout to 300 seconds (5 minutes), matching Z2M.
     // This controls how long the NCP keeps a transient key entry before expiring it.
-    let timeout_bytes: heapless::Vec<u8, 255> = [0x2C, 0x01].into_iter().collect(); // 300 in LE u16
-    context
-        .uart
+    let timeout_bytes: heapless::Vec<u8, 255, u8> = [0x2C, 0x01].into_iter().collect(); // 300 in LE u16
+    context.connection
         .set_value(value::Id::TransientKeyTimeoutSec, timeout_bytes)
         .await
         .map_err(map_ezsp_error("set transient key timeout"))?;
@@ -1214,15 +1343,13 @@ async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
     // - JOINER_GLOBAL_LINK_KEY: joiners use the global link key.
     // - NWK_LEAVE_REQUEST_NOT_ALLOWED: prevent rogue devices from forcing
     //   others off the network via NWK leave requests.
-    let extended_bitmask: heapless::Vec<u8, 255> = [0x10, 0x01].into_iter().collect(); // 0x0110 in LE u16
-    context
-        .uart
+    let extended_bitmask: heapless::Vec<u8, 255, u8> = [0x10, 0x01].into_iter().collect(); // 0x0110 in LE u16
+    context.connection
         .set_value(value::Id::ExtendedSecurityBitmask, extended_bitmask)
         .await
         .map_err(map_ezsp_error("set extended security bitmask"))?;
 
-    context
-        .uart
+    context.connection
         .set_policy(
             policy::Id::MessageContentsInCallback,
             u8::from(decision::Id::MessageTagOnlyInCallback),
@@ -1232,8 +1359,7 @@ async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
 
     // Enable ZLL (Touchlink) message processing on the stack so that
     // Touchlink scan requests and responses are handled by the NCP.
-    context
-        .uart
+    context.connection
         .set_policy(policy::Id::Zll, ZLL_POLICY_ENABLED)
         .await
         .map_err(map_ezsp_error("enable ZLL policy"))?;
@@ -1242,8 +1368,7 @@ async fn configure_stack(context: &mut EzspContext) -> Result<(), AppError> {
 }
 
 async fn form_coordinator_network(context: &mut EzspContext) -> Result<(), AppError> {
-    let coordinator_eui64 = context
-        .uart
+    let coordinator_eui64 = context.connection
         .get_eui64()
         .await
         .map_err(map_ezsp_error("get coordinator EUI64"))?;
@@ -1252,8 +1377,7 @@ async fn form_coordinator_network(context: &mut EzspContext) -> Result<(), AppEr
     let pan_id = match configured_pan_id() {
         Some(value) => value,
         None => random_pan_id(
-            context
-                .uart
+            context.connection
                 .get_random_number()
                 .await
                 .map_err(map_ezsp_error("generate PAN ID"))?,
@@ -1270,14 +1394,13 @@ async fn form_coordinator_network(context: &mut EzspContext) -> Result<(), AppEr
     );
 
     ezsp::Security::set_initial_security_state(
-        &mut context.uart,
+        &mut context.connection,
         build_initial_security_state(),
     )
     .await
     .map_err(map_ezsp_error("set initial security state"))?;
 
-    context
-        .uart
+    context.connection
         .form_network(EmberNetworkParameters::new(
             extended_pan_id,
             pan_id,
@@ -1295,8 +1418,7 @@ async fn form_coordinator_network(context: &mut EzspContext) -> Result<(), AppEr
 }
 
 async fn log_network_parameters(context: &mut EzspContext, serial_port: &str) -> Result<(), AppError> {
-    let (node_type, parameters) = context
-        .uart
+    let (node_type, parameters) = context.connection
         .get_network_parameters()
         .await
         .map_err(map_ezsp_error("get network parameters"))?;
@@ -1319,8 +1441,7 @@ async fn wait_for_network_ready(context: &mut EzspContext) -> Result<EmberNetwor
             let _ = handle_callback(context, callback).await;
         }
 
-        let state = context
-            .uart
+        let state = context.connection
             .network_state()
             .await
             .map_err(map_ezsp_error("read network state after form"))?;
@@ -1367,8 +1488,10 @@ fn configured_network_channel() -> u8 {
         .unwrap_or(DEFAULT_NETWORK_CHANNEL)
 }
 
-fn configured_network_tx_power() -> u8 {
-    parse_u8_env("ZIGBEE_TX_POWER").unwrap_or(DEFAULT_NETWORK_TX_POWER)
+fn configured_network_tx_power() -> i8 {
+    parse_u8_env("ZIGBEE_TX_POWER")
+        .and_then(|value| i8::try_from(value).ok())
+        .unwrap_or(DEFAULT_NETWORK_TX_POWER)
 }
 
 fn configured_pan_id() -> Option<u16> {
@@ -1435,8 +1558,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                 let blank_eui64 = Eui64::new(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
                 let key: security_man::Key = ZIGBEE_ALLIANCE09_LINK_KEY;
 
-                match context
-                    .uart
+                match context.connection
                     .import_transient_key(blank_eui64, key, security_man::Flags::NONE)
                     .await
                 {
@@ -1450,8 +1572,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
 
                 // Set TC policy to allow new joins + unsecured rejoins (matching Z2M's
                 // `emberSetJoinPolicy(USE_PRECONFIGURED_KEY)` = bitmask 0x03).
-                match context
-                    .uart
+                match context.connection
                     .set_policy(
                         policy::Id::TrustCenter,
                         (decision::Bitmask::ALLOW_JOINS | decision::Bitmask::ALLOW_UNSECURED_REJOINS).bits(),
@@ -1468,7 +1589,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
             } else {
                 // Closing the network: clear all transient keys so no new devices can
                 // join (they would need a matching key in the transient table).
-                match context.uart.clear_transient_link_keys().await {
+                match context.connection.clear_transient_link_keys().await {
                     Ok(()) => {
                         info!("transient link keys cleared (network closed)");
                     }
@@ -1478,8 +1599,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                 }
 
                 // Restrict TC policy to unsecured rejoins only (no new joins).
-                match context
-                    .uart
+                match context.connection
                     .set_policy(
                         policy::Id::TrustCenter,
                         decision::Bitmask::ALLOW_UNSECURED_REJOINS.bits(),
@@ -1503,8 +1623,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                         "Invalid permit-join duration {seconds}: {error}"
                     )))?
             };
-            context
-                .uart
+            context.connection
                 .permit_joining(duration)
                 .await
                 .map_err(map_ezsp_error("permit join"))?;
@@ -1567,8 +1686,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
             let sequence = next_device_sequence(context, target.node_id);
             let zcl_payload = build_on_off_command_payload(enabled, sequence);
 
-            context
-                .uart
+            context.connection
                 .send_unicast(
                     Destination::Direct(NodeId::from(target.node_id)),
                     aps_frame,
@@ -1611,8 +1729,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                 0,
             );
 
-            context
-                .uart
+            context.connection
                 .send_unicast(
                     Destination::Direct(NodeId::from(target.node_id)),
                     aps_frame,
@@ -1657,8 +1774,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                 0,
             );
 
-            context
-                .uart
+            context.connection
                 .send_unicast(
                     Destination::Direct(NodeId::from(target.node_id)),
                     aps_frame,
@@ -1708,8 +1824,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                 0,
             );
 
-            context
-                .uart
+            context.connection
                 .send_unicast(
                     Destination::Direct(NodeId::from(target.node_id)),
                     aps_frame,
@@ -1772,8 +1887,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                         0,
                     );
 
-                    context
-                        .uart
+                    context.connection
                         .send_unicast(
                             Destination::Direct(NodeId::from(target.node_id)),
                             aps_frame,
@@ -1808,8 +1922,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                         0,
                     );
 
-                    context
-                        .uart
+                    context.connection
                         .send_unicast(
                             Destination::Direct(NodeId::from(target.node_id)),
                             aps_frame,
@@ -1834,8 +1947,7 @@ async fn handle_command(context: &mut EzspContext, command: NativeZigbeeCommand)
                         0,
                     );
 
-                    context
-                        .uart
+                    context.connection
                         .send_unicast(
                             Destination::Direct(NodeId::from(target.node_id)),
                             aps_frame,
@@ -1898,7 +2010,7 @@ async fn touchlink_scan(context: &mut EzspContext) -> Result<(), AppError> {
     );
 
     ezsp::Zll::set_security_state_without_key(
-        &mut context.uart,
+        &mut context.connection,
         zll_security,
     )
     .await
@@ -1906,8 +2018,7 @@ async fn touchlink_scan(context: &mut EzspContext) -> Result<(), AppError> {
     info!("touchlink: ZLL security state configured (master key)");
 
     // --- 2. Set the channel mask for the scan ---
-    context
-        .uart
+    context.connection
         .set_primary_channel_mask(ZLL_PRIMARY_CHANNEL_MASK)
         .await
         .map_err(map_ezsp_error("set ZLL primary channel mask"))?;
@@ -1941,7 +2052,7 @@ async fn touchlink_scan(context: &mut EzspContext) -> Result<(), AppError> {
         );
 
         ezsp::Zll::start_scan(
-            &mut context.uart,
+            &mut context.connection,
             *channel_mask,
             TOUCHLINK_TX_POWER,
             EmberNodeType::Coordinator,
@@ -1993,8 +2104,7 @@ async fn touchlink_scan(context: &mut EzspContext) -> Result<(), AppError> {
             "touchlink: commissioning ZLL device (JoinTarget)"
         );
 
-        match context
-            .uart
+        match context.connection
             .network_ops(found.network_info.clone(), ZllNetworkOperation::JoinTarget, TOUCHLINK_TX_POWER)
             .await
         {
@@ -2088,8 +2198,7 @@ async fn send_read_attributes(
         0,
     );
 
-    context
-        .uart
+    context.connection
         .send_unicast(
             Destination::Direct(NodeId::from(node_id)),
             aps_frame,
@@ -2171,7 +2280,7 @@ async fn handle_callback(context: &mut EzspContext, callback: Callback) -> Optio
         },
         Callback::TrustCenter(handler) => match handler {
             parameters::trust_center::handler::Handler::TrustCenterJoin(join) => {
-                handle_trust_center_join(context, join).await
+                handle_trust_center_join(context, *join).await
             }
         },
         Callback::Messaging(handler) => match handler {
@@ -2740,8 +2849,7 @@ async fn restore_desired_state(context: &mut EzspContext) {
                     0,
                 );
 
-                match context
-                    .uart
+                match context.connection
                     .send_unicast(
                         Destination::Direct(NodeId::from(node_id)),
                         aps_frame,
@@ -2789,8 +2897,7 @@ async fn restore_desired_state(context: &mut EzspContext) {
                     0,
                 );
 
-                match context
-                    .uart
+                match context.connection
                     .send_unicast(
                         Destination::Direct(NodeId::from(node_id)),
                         aps_frame,
@@ -2837,8 +2944,7 @@ async fn restore_desired_state(context: &mut EzspContext) {
                     0,
                 );
 
-                match context
-                    .uart
+                match context.connection
                     .send_unicast(
                         Destination::Direct(NodeId::from(node_id)),
                         aps_frame,
@@ -2934,8 +3040,7 @@ async fn request_active_endpoints(context: &mut EzspContext, node_id: u16) -> Re
         0,
     );
 
-    context
-        .uart
+    context.connection
         .send_unicast(
             Destination::Direct(NodeId::from(node_id)),
             aps_frame,
@@ -2964,8 +3069,7 @@ async fn request_simple_descriptor(
         0,
     );
 
-    context
-        .uart
+    context.connection
         .send_unicast(
             Destination::Direct(NodeId::from(node_id)),
             aps_frame,
@@ -3059,8 +3163,7 @@ async fn send_bind_request(
         "sending ZDO Bind_req to remote"
     );
 
-    context
-        .uart
+    context.connection
         .send_unicast(
             Destination::Direct(NodeId::from(target_node_id)),
             aps_frame,
@@ -3539,8 +3642,7 @@ async fn broadcast_power_to_all_lamps(context: &mut EzspContext, enabled: bool) 
             0,
         );
 
-        match context
-            .uart
+        match context.connection
             .send_unicast(
                 Destination::Direct(NodeId::from(lamp_node_id)),
                 aps_frame,
@@ -3606,8 +3708,7 @@ async fn broadcast_brightness_step_to_all_lamps(context: &mut EzspContext, step_
             0,
         );
 
-        match context
-            .uart
+        match context.connection
             .send_unicast(
                 Destination::Direct(NodeId::from(lamp_node_id)),
                 aps_frame,
