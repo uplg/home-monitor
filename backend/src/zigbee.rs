@@ -428,7 +428,11 @@ impl ZigbeeManager {
         }
         self.inner.runtime.send(command).await?;
         tokio::time::sleep(Duration::from_millis(250)).await;
-        self.sync_from_runtime().await?;
+        // The radio command already went out: a failed refresh (e.g. the
+        // persistence write) must not turn the request into an error.
+        if let Err(error) = self.sync_from_runtime().await {
+            warn!(lamp_id, error = %error, "failed to sync native zigbee state after command");
+        }
         self.current_state(lamp_id).await
     }
 

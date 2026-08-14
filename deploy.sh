@@ -20,10 +20,13 @@ RUNTIME_FILES=(
 
 MUTABLE_RUNTIME_FILES=(
   device-cache.json
+  broadlink-codes.json
   hue-lamps.json
   hue-lamps-blacklist.json
   zigbee-lamps.json
   zigbee-lamps-blacklist.json
+  climate-state.json
+  nabaztag.json
 )
 
 usage() {
@@ -114,9 +117,6 @@ set -eu
 APP_DIR="$1"
 SERVICE_USER="$2"
 SERVICE_GROUP="$3"
-REMOTE_USER="$(id -un)"
-REMOTE_GROUP="$(id -gn)"
-
 apk add --no-cache rsync
 if ! getent group "${SERVICE_GROUP}" >/dev/null 2>&1; then
   addgroup -S "${SERVICE_GROUP}"
@@ -136,9 +136,28 @@ mkdir -p \
   "${APP_DIR}/deploy/mosquitto" \
   "${APP_DIR}/mosquitto/certs" \
   "${APP_DIR}/cache"
+EOF
+}
 
-chown -R "${REMOTE_USER}:${REMOTE_GROUP}" "${APP_DIR}"
-chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/cache"
+# rsync runs as root, so every push must hand the mutable state back to the
+# service user — otherwise the backend gets EACCES on its next persist.
+fix_state_ownership() {
+  require_host
+  log "Restoring mutable-state ownership"
+  ssh_pi sh -s -- "${PI_APP_DIR}" "${PI_SERVICE_USER}" "${PI_SERVICE_GROUP}" <<'EOF'
+set -eu
+APP_DIR="$1"
+SERVICE_USER="$2"
+SERVICE_GROUP="$3"
+chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/cache" 2>/dev/null || true
+for state_file in \
+  device-cache.json broadlink-codes.json hue-lamps.json hue-lamps-blacklist.json \
+  zigbee-lamps.json zigbee-lamps-blacklist.json climate-state.json nabaztag.json
+do
+  if [ -e "${APP_DIR}/${state_file}" ]; then
+    chown "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/${state_file}"
+  fi
+done
 EOF
 }
 
@@ -212,6 +231,8 @@ push_to_pi() {
     log "Pushing cache directory"
     rsync_pi -avz "${ROOT_DIR}/cache/" "${PI_HOST}:${PI_APP_DIR}/cache/"
   fi
+
+  fix_state_ownership
 }
 
 upgrade_pi() {
@@ -253,7 +274,9 @@ for mutable_path in \
   "${APP_DIR}/hue-lamps.json" \
   "${APP_DIR}/hue-lamps-blacklist.json" \
   "${APP_DIR}/zigbee-lamps.json" \
-  "${APP_DIR}/zigbee-lamps-blacklist.json"
+  "${APP_DIR}/zigbee-lamps-blacklist.json" \
+  "${APP_DIR}/climate-state.json" \
+  "${APP_DIR}/nabaztag.json"
 do
   if [ -e "${mutable_path}" ]; then
     chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${mutable_path}"
@@ -345,7 +368,9 @@ for mutable_path in \
   "${APP_DIR}/hue-lamps.json" \
   "${APP_DIR}/hue-lamps-blacklist.json" \
   "${APP_DIR}/zigbee-lamps.json" \
-  "${APP_DIR}/zigbee-lamps-blacklist.json"
+  "${APP_DIR}/zigbee-lamps-blacklist.json" \
+  "${APP_DIR}/climate-state.json" \
+  "${APP_DIR}/nabaztag.json"
 do
   if [ -e "${mutable_path}" ]; then
     chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${mutable_path}"
