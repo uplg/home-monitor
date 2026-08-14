@@ -59,7 +59,7 @@ Meross plug firmware requires a reachable TLS broker.
 
 Dependency chain (all pinned in `backend/Cargo.toml` + lockfile):
 
-- `ashv2` — **uplg fork, branch `upstream-sync`** = upstream
+- `ashv2` — **uplg fork, branch `main`** = upstream
   (PaulmannLighting) v12 + robustness fixes not yet upstream: transmitter
   self-requeue deadlock removed (local pending queue + housekeeping tick),
   frame-number reset after RST/RST-ACK, receiver exit on fatal serial errors,
@@ -67,7 +67,7 @@ Dependency chain (all pinned in `backend/Cargo.toml` + lockfile):
   payload dedupe. Transport-agnostic (AsyncRead/AsyncWrite); the backend
   opens the port with `tokio-serial`. The `ezsp` cargo feature provides the
   `Transmit`/`Receive` adapters.
-- `ezsp` 15 — **uplg fork, branch `upstream-sync`**, wired through
+- `ezsp` 15 — **uplg fork, branch `main`**, wired through
   `[patch.crates-io]` so both the direct dep and ashv2's internal dep
   resolve to it. Single fork patch: `importTransientKey` uses the legacy
   EZSP ≤ v13 wire format (no SecManContext prefix) because the Sonoff
@@ -120,7 +120,7 @@ Driver design (`zigbee_native.rs`):
 | Hue lamps | BLE (btleplug), feature-gated | stub on Pi builds |
 | Broadlink | UDP discovery + IR send/learn (rbroadlink) | codes in broadlink-codes.json |
 | Tempo | RTE + data.gouv + Open-Meteo HTTP APIs | calibrated prediction model, seasons cached |
-| Nabaztag (garenne) | UDP 9998 `grn1 ` control + GET /status | rabbit runs clapier's garenne firmware; clapier server is hosted on the same Pi (/opt/clapier, OpenRC). `nabaztag.rs` pushes the daily Tempo colors every 15 min: today = static belly LED (`led 2 RRGGBB`), tomorrow = ear position. Config: `NABAZTAG_HOST` (rabbit IP) + nabaztag.json. All firmware tooling lives in uplg/nabgcc (branch tooling); nothing firmware-related remains here. |
+| Nabaztag (garenne) | UDP 9998 `grn1 ` control + GET /status | rabbit runs clapier's garenne firmware; clapier server is hosted on the same Pi (/opt/clapier, OpenRC). `nabaztag.rs` pushes the daily Tempo colors every 15 min: today = static belly LED (`led 2 RRGGBB`), tomorrow = ear position. Config: `NABAZTAG_HOST` (rabbit IP) + nabaztag.json. All firmware tooling lives in uplg/nabgcc (branch portal-ui); nothing firmware-related remains here. |
 
 ## 6. Frontend notes
 

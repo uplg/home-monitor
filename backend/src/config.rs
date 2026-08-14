@@ -18,6 +18,7 @@ pub struct Config {
     pub device_cache_path: PathBuf,
     pub broadlink_codes_path: PathBuf,
     pub climate_state_path: PathBuf,
+    pub refresh_tokens_path: PathBuf,
     pub hue_lamps_path: PathBuf,
     pub hue_blacklist_path: PathBuf,
     pub zigbee_lamps_path: PathBuf,
@@ -60,6 +61,10 @@ impl Config {
         let climate_state_path = env::var("CLIMATE_STATE_JSON_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| source_root.join("climate-state.json"));
+
+        let refresh_tokens_path = env::var("REFRESH_TOKENS_JSON_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| source_root.join("refresh-tokens.json"));
 
         let hue_lamps_path = env::var("HUE_LAMPS_JSON_PATH")
             .map(PathBuf::from)
@@ -151,6 +156,7 @@ impl Config {
             device_cache_path,
             broadlink_codes_path,
             climate_state_path,
+            refresh_tokens_path,
             hue_lamps_path,
             hue_blacklist_path,
             zigbee_lamps_path,
@@ -179,6 +185,7 @@ impl Config {
             device_cache_path: source_root.join("device-cache.json"),
             broadlink_codes_path: source_root.join("broadlink-codes.json"),
             climate_state_path: source_root.join("climate-state.json"),
+            refresh_tokens_path: source_root.join("refresh-tokens.json"),
             hue_lamps_path: source_root.join("hue-lamps.json"),
             hue_blacklist_path: source_root.join("hue-lamps-blacklist.json"),
             zigbee_lamps_path: source_root.join("zigbee-lamps.json"),

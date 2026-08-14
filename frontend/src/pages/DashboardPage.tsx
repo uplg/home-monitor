@@ -12,6 +12,7 @@ import { ZigbeeLampCard, ZigbeePairingPanel } from "@/components/devices/ZigbeeL
 import { BroadlinkClimateControl } from "@/components/devices/BroadlinkClimateControl";
 import { MerossPlugCard } from "@/components/devices/MerossPlugControl";
 import { TempoCard } from "@/components/devices/TempoCard";
+import { NabaztagTile } from "@/components/devices/NabaztagTile";
 // Nabaztag is disabled while the physical device is being repaired.
 // import { NabaztagCard } from "@/components/devices/NabaztagControl";
 import { DashboardSectionHeader } from "@/components/dashboard/DashboardSectionHeader";
@@ -294,19 +295,7 @@ export function DashboardPage() {
     <div className="space-y-5">
       <TempoCard />
 
-      {/* Nabaztag section — disabled while the physical device is being repaired.
-      <section className="space-y-4">
-        <DashboardSectionHeader
-          icon={<Rabbit className="h-5 w-5" />}
-          iconClassName="bg-violet-100 text-violet-700"
-          title={t("nabaztag.title")}
-          description={t("nabaztag.subtitle")}
-        />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <NabaztagCard />
-        </div>
-      </section>
-      */}
+      <NabaztagTile />
 
       {!isHueDisabled && (
         <section className="space-y-4">

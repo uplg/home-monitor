@@ -27,6 +27,7 @@ MUTABLE_RUNTIME_FILES=(
   zigbee-lamps-blacklist.json
   climate-state.json
   nabaztag.json
+  refresh-tokens.json
 )
 
 usage() {
@@ -152,7 +153,7 @@ SERVICE_GROUP="$3"
 chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/cache" 2>/dev/null || true
 for state_file in \
   device-cache.json broadlink-codes.json hue-lamps.json hue-lamps-blacklist.json \
-  zigbee-lamps.json zigbee-lamps-blacklist.json climate-state.json nabaztag.json
+  zigbee-lamps.json zigbee-lamps-blacklist.json climate-state.json nabaztag.json refresh-tokens.json
 do
   if [ -e "${APP_DIR}/${state_file}" ]; then
     chown "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/${state_file}"
@@ -193,6 +194,7 @@ push_to_pi() {
   rsync_pi -avz "${ROOT_DIR}/deploy/openrc/maison" "${PI_HOST}:${PI_APP_DIR}/deploy/openrc/"
   rsync_pi -avz "${ROOT_DIR}/deploy/openrc/cloudflared-maison" "${PI_HOST}:${PI_APP_DIR}/deploy/openrc/"
   rsync_pi -avz "${ROOT_DIR}/deploy/mosquitto/maison.conf" "${PI_HOST}:${PI_APP_DIR}/deploy/mosquitto/"
+  rsync_pi -avz --chown=root:root "${ROOT_DIR}/deploy/logrotate/maison" "${PI_HOST}:/etc/logrotate.d/maison"
 
   if [ -d "${ROOT_DIR}/mosquitto/certs" ]; then
     log "Pushing Mosquitto certificates"
@@ -276,7 +278,8 @@ for mutable_path in \
   "${APP_DIR}/zigbee-lamps.json" \
   "${APP_DIR}/zigbee-lamps-blacklist.json" \
   "${APP_DIR}/climate-state.json" \
-  "${APP_DIR}/nabaztag.json"
+  "${APP_DIR}/nabaztag.json" \
+  "${APP_DIR}/refresh-tokens.json"
 do
   if [ -e "${mutable_path}" ]; then
     chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${mutable_path}"
@@ -284,7 +287,7 @@ do
 done
 
 apk update
-apk add --no-cache bash ca-certificates curl git mosquitto rsync
+apk add --no-cache bash ca-certificates curl git logrotate mosquitto rsync
 if ! getent group "${SERVICE_GROUP}" >/dev/null 2>&1; then
   addgroup -S "${SERVICE_GROUP}"
 fi
@@ -370,7 +373,8 @@ for mutable_path in \
   "${APP_DIR}/zigbee-lamps.json" \
   "${APP_DIR}/zigbee-lamps-blacklist.json" \
   "${APP_DIR}/climate-state.json" \
-  "${APP_DIR}/nabaztag.json"
+  "${APP_DIR}/nabaztag.json" \
+  "${APP_DIR}/refresh-tokens.json"
 do
   if [ -e "${mutable_path}" ]; then
     chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${mutable_path}"

@@ -739,12 +739,19 @@ async fn run_native_driver(
 
         *driver_network_state.write().await = ember_network_state_to_driver_state(network_state);
         *lifecycle.write().await = DriverLifecycle::Ready;
+        // A healthy joined radio is silent in the UI; only abnormal states
+        // deserve a status message.
+        let nominal = ember_network_state_to_driver_state(network_state) == DriverNetworkState::Joined;
         set_status(
             &status,
-            Some(format!(
-                "Native Zigbee connected on {serial_port} with network state {}",
-                network_state_label(network_state)
-            )),
+            if nominal {
+                None
+            } else {
+                Some(format!(
+                    "Native Zigbee connected on {serial_port} with network state {}",
+                    network_state_label(network_state)
+                ))
+            },
             None,
         )
         .await;
@@ -888,14 +895,24 @@ async fn run_native_driver(
                                         "no-network" => DriverNetworkState::NoNetwork,
                                         _ => DriverNetworkState::Unknown,
                                     };
-                                    set_status(&status, Some(format!("Native Zigbee network state: {network_status}")), None).await;
+                                    let message = if network_status == "joined" {
+                                        None
+                                    } else {
+                                        Some(format!("Native Zigbee network state: {network_status}"))
+                                    };
+                                    set_status(&status, message, None).await;
                                 }
+                                // Join/announce churn is log-worthy, not
+                                // UI-worthy: the status message surfaces in
+                                // the frontend, where a raw EUI64 only takes
+                                // space. The device list itself is the
+                                // user-facing signal.
                                 NativeZigbeeEvent::DeviceJoined { node_id, eui64 } => {
-                                    set_status(&status, Some(format!("Native Zigbee device joined: {eui64} ({node_id:#06x})")), None).await;
+                                    info!(%eui64, node_id = format_args!("{node_id:#06x}"), "zigbee device joined");
                                     sync_status_devices(&status, &context.joined_devices).await;
                                 }
                                 NativeZigbeeEvent::DeviceAnnounced { node_id, eui64 } => {
-                                    set_status(&status, Some(format!("Native Zigbee device announced: {eui64} ({node_id:#06x})")), None).await;
+                                    info!(%eui64, node_id = format_args!("{node_id:#06x}"), "zigbee device announced");
                                     sync_status_devices(&status, &context.joined_devices).await;
                                 }
                                 NativeZigbeeEvent::DeliveryFailed { .. } => {

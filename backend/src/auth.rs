@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use axum::{
     extract::{FromRef, FromRequestParts},
@@ -19,12 +23,16 @@ pub struct AuthRateLimiter {
 /// Server-side store for refresh tokens.
 /// Maps opaque token strings to their associated user data and expiration.
 /// Expired entries are evicted on each lookup to prevent unbounded growth.
+/// Persisted to disk so a backend restart or redeploy does not log every
+/// session out.
 #[derive(Clone, Default)]
 pub struct RefreshTokenStore {
     inner: Arc<Mutex<HashMap<String, RefreshEntry>>>,
+    path: Option<Arc<PathBuf>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RefreshEntry {
     pub user_id: String,
     pub username: String,
@@ -187,10 +195,29 @@ impl AuthRateLimiter {
 }
 
 impl RefreshTokenStore {
+    /// Load the store from disk (missing or corrupt file = empty store).
+    /// Expired entries are dropped at load time.
+    pub fn load(path: &Path) -> Self {
+        let now = Utc::now().timestamp();
+        let mut map = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|content| {
+                serde_json::from_str::<HashMap<String, RefreshEntry>>(content.trim()).ok()
+            })
+            .unwrap_or_default();
+        map.retain(|_, entry| entry.expires_at > now);
+
+        Self {
+            inner: Arc::new(Mutex::new(map)),
+            path: Some(Arc::new(path.to_path_buf())),
+        }
+    }
+
     /// Store a refresh token with its associated user data.
     pub async fn insert(&self, token: String, entry: RefreshEntry) {
         let mut map = self.inner.lock().await;
         map.insert(token, entry);
+        self.persist(&map);
     }
 
     /// Look up a refresh token. Returns `None` if the token doesn't exist or is expired.
@@ -199,12 +226,44 @@ impl RefreshTokenStore {
         let now = Utc::now().timestamp();
         let mut map = self.inner.lock().await;
         // Evict expired entries to prevent unbounded growth.
+        let before = map.len();
         map.retain(|_, entry| entry.expires_at > now);
+        if map.len() != before {
+            self.persist(&map);
+        }
         map.get(token).cloned()
     }
 
     /// Remove a refresh token (used on logout and rotation).
     pub async fn remove(&self, token: &str) {
-        self.inner.lock().await.remove(token);
+        let mut map = self.inner.lock().await;
+        if map.remove(token).is_some() {
+            self.persist(&map);
+        }
+    }
+
+    /// Best-effort write-through; the tokens are bearer secrets, so the file
+    /// is chmod 600. Failures are logged, never propagated: an unwritable
+    /// disk must not break authentication.
+    fn persist(&self, map: &HashMap<String, RefreshEntry>) {
+        let Some(path) = self.path.as_deref() else {
+            return;
+        };
+        let payload = match serde_json::to_string_pretty(map) {
+            Ok(payload) => payload,
+            Err(error) => {
+                tracing::warn!(%error, "failed to serialize refresh tokens");
+                return;
+            }
+        };
+        if let Err(error) = std::fs::write(path, format!("{payload}\n")) {
+            tracing::warn!(%error, "failed to persist refresh tokens");
+            return;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
     }
 }

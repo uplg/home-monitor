@@ -129,9 +129,12 @@ async fn push_tempo(
         AppError::service_unavailable("Today's Tempo color is not available yet")
     })?;
 
+    // Official color for tomorrow when published, prediction otherwise.
+    let (tomorrow, _predicted) = state.tempo.tomorrow_color_or_predicted().await;
+
     let result = state
         .nabaztag
-        .push_tempo(today, tempo_data.tomorrow.color.as_deref())
+        .push_tempo(today, tomorrow.as_deref())
         .await?;
 
     Ok(Json(TempoPushResponse {

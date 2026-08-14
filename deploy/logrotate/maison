@@ -1,0 +1,17 @@
+# Log rotation for the maison stack (installed to /etc/logrotate.d/maison,
+# run by Alpine's /etc/periodic/daily via crond).
+# The services write through shell redirection and cannot reopen their log
+# on signal, hence copytruncate.
+/var/log/maison.log
+/var/log/cloudflared-maison.log
+/var/log/clapier.log
+/var/log/mosquitto/mosquitto.log
+{
+    daily
+    rotate 3
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

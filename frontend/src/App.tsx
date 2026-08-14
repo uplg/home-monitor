@@ -7,8 +7,6 @@ import { HueLampPage } from "./pages/HueLampPage";
 import { MerossPlugPage } from "./pages/MerossPlugPage";
 import { ZigbeeLampPage } from "./pages/ZigbeeLampPage";
 import TempoPredictionPage from "./pages/TempoPredictionPage";
-// Nabaztag is disabled while the physical device is being repaired.
-// import { NabaztagPage } from "./pages/NabaztagPage";
 import { Layout } from "./components/Layout";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -47,8 +45,6 @@ export default function App() {
         <Route path="zigbee-lamp/:lampId" element={<ZigbeeLampPage />} />
         <Route path="meross/:deviceId" element={<MerossPlugPage />} />
         <Route path="tempo-predictions" element={<TempoPredictionPage />} />
-        {/* Nabaztag route disabled while the physical device is being repaired. */}
-        {/* <Route path="nabaztag" element={<NabaztagPage />} /> */}
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

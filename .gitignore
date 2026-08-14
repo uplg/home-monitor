@@ -23,6 +23,7 @@ node_modules/
 devices.json
 device-cache.json
 climate-state.json
+refresh-tokens.json
 users.json
 meross-devices.json
 hue-lamps.json

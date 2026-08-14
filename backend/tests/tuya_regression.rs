@@ -372,6 +372,7 @@ fn test_config() -> Config {
         device_cache_path: cache_copy,
         broadlink_codes_path: temp_root.join("broadlink-codes.json"),
         climate_state_path: temp_root.join("climate-state.json"),
+        refresh_tokens_path: temp_root.join("refresh-tokens.json"),
         nabaztag_config_path: temp_root.join("nabaztag.json"),
         nabaztag_host: None,
         hue_lamps_path: source_root.join("hue-lamps.json"),

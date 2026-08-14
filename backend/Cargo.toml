@@ -24,7 +24,7 @@ dotenvy = "0.15.7"
 # ashv2's `ezsp` feature provides the Transmit/Receive adapters; the ezsp
 # crate itself resolves through [patch.crates-io] below so both the direct
 # dependency and ashv2's internal one use the same patched source.
-ashv2 = { git = "https://github.com/uplg/ashv2/", branch = "upstream-sync", version = "12.0.0", features = ["ezsp"] }
+ashv2 = { git = "https://github.com/uplg/ashv2/", branch = "main", version = "12.0.0", features = ["ezsp"] }
 ezsp = "15.0.0"
 silizium = { version = "3", features = ["le-stream"] }
 futures = "0.3.32"
@@ -52,4 +52,4 @@ tower = "0.5.3"
 uuid = { version = "1.23.1", features = ["v4"] }
 
 [patch.crates-io]
-ezsp = { git = "https://github.com/uplg/ezsp", branch = "upstream-sync" }
+ezsp = { git = "https://github.com/uplg/ezsp", branch = "main" }

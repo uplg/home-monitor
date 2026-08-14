@@ -72,7 +72,7 @@ pub fn build_app_from_config(config: Arc<Config>) -> Result<Router, AppError> {
 pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppState), AppError> {
     let users = Arc::new(load_users(&config)?);
     let auth_rate_limiter = AuthRateLimiter::default();
-    let refresh_store = RefreshTokenStore::default();
+    let refresh_store = RefreshTokenStore::load(&config.refresh_tokens_path);
     let broadlink =
         BroadlinkManager::new(&config.broadlink_codes_path, &config.climate_state_path)?;
     let hue = HueManager::new(config.as_ref())?;
@@ -128,9 +128,16 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
             match tempo_rabbit.tempo.get_tempo_data(false).await {
                 Ok((data, _)) => {
                     if let Some(today) = data.today.color.as_deref() {
+                        // Ears show tomorrow: the official color when RTE has
+                        // published it, the model's prediction otherwise.
+                        let (tomorrow, predicted) =
+                            tempo_rabbit.tempo.tomorrow_color_or_predicted().await;
+                        if predicted {
+                            tracing::debug!(color = ?tomorrow, "using predicted color for tomorrow");
+                        }
                         if let Err(error) = tempo_rabbit
                             .nabaztag
-                            .push_tempo(today, data.tomorrow.color.as_deref())
+                            .push_tempo(today, tomorrow.as_deref())
                             .await
                         {
                             tracing::debug!(%error, "tempo push to the rabbit failed");

@@ -130,6 +130,7 @@ fn test_config() -> Config {
         device_cache_path: source_root.join("device-cache.json"),
         broadlink_codes_path: temp_root.join("broadlink-codes.json"),
         climate_state_path: temp_root.join("climate-state.json"),
+        refresh_tokens_path: temp_root.join("refresh-tokens.json"),
         hue_lamps_path: source_root.join("hue-lamps.json"),
         hue_blacklist_path: source_root.join("hue-lamps-blacklist.json"),
         zigbee_lamps_path: source_root.join("zigbee-lamps.json"),

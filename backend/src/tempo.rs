@@ -441,6 +441,32 @@ impl TempoService {
         }
     }
 
+    /// Tomorrow's color for display purposes: the official RTE color when
+    /// published, otherwise the model's prediction for tomorrow. The boolean
+    /// is `true` when the color comes from the prediction.
+    pub async fn tomorrow_color_or_predicted(&self) -> (Option<String>, bool) {
+        if let Ok((data, _)) = self.get_tempo_data(false).await {
+            if let Some(color) = data.tomorrow.color {
+                return (Some(color), false);
+            }
+        }
+
+        let tomorrow = (paris_today() + chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        if let Ok(response) = self.get_predictions().await {
+            if let Some(prediction) = response
+                .predictions
+                .iter()
+                .find(|prediction| prediction.date == tomorrow)
+            {
+                return (Some(prediction.predicted_color.clone()), true);
+            }
+        }
+
+        (None, false)
+    }
+
     pub async fn get_predictions(&self) -> Result<TempoPredictionServiceResponse, AppError> {
         let state = self.get_state().await?;
         let season = state.season.clone();
