@@ -200,13 +200,13 @@ MQEOF
 
        /\\_/\\
       ( o.o )    maison
-       > ^ <     maison
+       > ^ <
 
       Alpine Linux on Raspberry Pi 1
       --------------------------------
       app     /opt/maison
       logs    /var/log/maison.log
-      mqtt    localhost:1883
+      mqtt    localhost:1883 / :8883 (tls, meross)
       tunnel  /var/log/cloudflared-maison.log
 
 MOTD
