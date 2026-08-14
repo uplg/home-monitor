@@ -11,6 +11,10 @@ const MITSUBISHI_STATE_LEN: usize = 18;
 /// The Mitsubishi clock counts in 10-minute ticks; one day is 144 ticks.
 const TICKS_PER_DAY: u16 = 144;
 
+/// Temperature setpoint bounds supported by the protocol (°C).
+pub const MIN_TEMPERATURE_C: u8 = 16;
+pub const MAX_TEMPERATURE_C: u8 = 31;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Mode {
     Auto,
@@ -107,16 +111,14 @@ impl Default for MitsubishiState {
 /// must pass the current local time or the timers drift on every send.
 pub fn encode_mitsubishi_command(
     command: &str,
-    clock_ticks: Option<u8>,
+    clock_ticks: u8,
 ) -> Result<Option<Vec<u8>>, String> {
     if !command.starts_with("state-") {
         return Ok(None);
     }
 
     let mut state = parse_state_command(command)?;
-    if let Some(ticks) = clock_ticks {
-        state.clock = ticks;
-    }
+    state.clock = clock_ticks;
     if let Some(delta) = state.stop_in_ticks {
         // Resolve the relative sleep timer against the unit clock we are
         // about to transmit. Wraps past midnight (144 ticks per day).
@@ -140,6 +142,72 @@ pub fn current_clock_ticks() -> u8 {
     use chrono::Timelike;
     let now = chrono::Utc::now().with_timezone(&chrono_tz::Europe::Paris);
     (now.hour() * 6 + now.minute() / 10) as u8
+}
+
+/// The settings encoded in a structured `state-*` command, in API-friendly
+/// form. This is the single source of truth for restoring the UI form —
+/// the frontend must not re-parse the command grammar.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClimateSettings {
+    pub mode: String,
+    pub temperature: u8,
+    pub fan: String,
+    pub vane: String,
+    pub econo: bool,
+    /// Relative sleep timer in minutes (`stopin` token), if armed.
+    pub stop_in_minutes: Option<u16>,
+}
+
+/// Parses a structured command back into its settings. Returns `None` for
+/// `state-off`, non-structured commands, and anything unparseable.
+pub fn parse_climate_settings(command: &str) -> Option<ClimateSettings> {
+    if command == "state-off" || !command.starts_with("state-") {
+        return None;
+    }
+
+    let state = parse_state_command(command).ok()?;
+    Some(ClimateSettings {
+        mode: mode_token(state.mode).to_string(),
+        temperature: state.temperature_c,
+        fan: fan_token(state.fan).to_string(),
+        vane: vane_token(state.vane).to_string(),
+        econo: state.ecocool,
+        stop_in_minutes: state.stop_in_ticks.map(|ticks| u16::from(ticks) * 10),
+    })
+}
+
+fn mode_token(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Auto => "auto",
+        Mode::Cool => "cool",
+        Mode::Dry => "dry",
+        Mode::Heat => "heat",
+        Mode::Fan => "fan",
+    }
+}
+
+fn fan_token(fan: Fan) -> &'static str {
+    match fan {
+        Fan::Auto => "auto",
+        Fan::Level1 => "1",
+        Fan::Level2 => "2",
+        Fan::Level3 => "3",
+        Fan::Level4 => "4",
+        Fan::Silent => "silent",
+    }
+}
+
+fn vane_token(vane: Vane) -> &'static str {
+    match vane {
+        Vane::Auto => "auto",
+        Vane::Highest => "highest",
+        Vane::High => "high",
+        Vane::Middle => "middle",
+        Vane::Low => "low",
+        Vane::Lowest => "lowest",
+        Vane::Swing => "swing",
+    }
 }
 
 fn parse_state_command(command: &str) -> Result<MitsubishiState, String> {
@@ -267,7 +335,7 @@ fn parse_temperature(token: Option<&str>) -> Result<u8, String> {
     let temperature = value
         .parse::<u8>()
         .map_err(|_| format!("invalid temperature '{value}'"))?;
-    if !(16..=31).contains(&temperature) {
+    if !(MIN_TEMPERATURE_C..=MAX_TEMPERATURE_C).contains(&temperature) {
         return Err(format!("temperature out of range '{value}'"));
     }
     Ok(temperature)
@@ -505,7 +573,7 @@ mod tests {
     fn parses_state_command() {
         let packet = encode_mitsubishi_command(
             "state-cool-22-fan-2-vane-low-wide-center-econo-on-start-06-00-stop-11-00",
-            None,
+            0,
         )
         .expect("command should parse")
         .expect("state command should generate");
@@ -545,7 +613,7 @@ mod tests {
         // Clock 23:00 (138 ticks) + stop in 3h (18 ticks) wraps to 02:00 (12).
         let packet = encode_mitsubishi_command(
             "state-cool-20-fan-auto-vane-auto-wide-center-stopin-180",
-            Some(138),
+            138,
         )
         .expect("command should parse")
         .expect("state command should generate");
@@ -572,6 +640,23 @@ mod tests {
         ] {
             assert!(parse_state_command(command).is_err(), "{command} should be rejected");
         }
+    }
+
+    #[test]
+    fn parse_climate_settings_roundtrips_a_structured_command() {
+        let settings = parse_climate_settings(
+            "state-heat-24-fan-2-vane-middle-wide-center-econo-off-stopin-90",
+        )
+        .expect("settings should parse");
+        assert_eq!(settings.mode, "heat");
+        assert_eq!(settings.temperature, 24);
+        assert_eq!(settings.fan, "2");
+        assert_eq!(settings.vane, "middle");
+        assert!(!settings.econo);
+        assert_eq!(settings.stop_in_minutes, Some(90));
+
+        assert_eq!(parse_climate_settings("state-off"), None);
+        assert_eq!(parse_climate_settings("cool_22_auto"), None);
     }
 
     #[test]

@@ -1000,6 +1000,84 @@ async fn backoff_before_retry(
     tokio::time::sleep(delay).await;
 }
 
+/// Opens the serial port, spawns the four pipeline tasks and negotiates the
+/// EZSP protocol version. On failure the tasks are shut down; when the
+/// failure is a protocol-version mismatch, the version the NCP announced is
+/// returned alongside the error so the caller can retry with it.
+async fn open_and_connect(
+    serial_port: &str,
+    baud_rate: u32,
+    flow_control: tokio_serial::FlowControl,
+    mode_label: &str,
+    desired_version: NonZero<u8>,
+) -> Result<
+    (EzspConnection, mpsc::Receiver<Callback>, PipelineTasks),
+    (AppError, Option<NonZero<u8>>),
+> {
+    let stream = tokio_serial::new(serial_port, baud_rate)
+        .flow_control(flow_control)
+        .open_native_async()
+        .map_err(|error| {
+            (
+                AppError::service_unavailable(format!(
+                    "Unable to open Zigbee serial port {serial_port} in {mode_label} mode: {error}"
+                )),
+                None,
+            )
+        })?;
+
+    let (reader, writer) = tokio::io::split(stream);
+    let (payload_tx, payload_rx) = mpsc::channel::<Payload>(EZSP_CHANNEL_SIZE);
+    let (ash_handle, ash_futures) = start_ash(reader, writer, payload_tx);
+    let (client, ezsp_futures) = EzspClient::run(
+        ash_handle,
+        AshEzspReceiver::new(payload_rx),
+        EZSP_CHANNEL_SIZE,
+    );
+
+    let tasks = PipelineTasks {
+        ash_transmitter: tokio::spawn(ash_futures.transmitter),
+        ash_receiver: tokio::spawn(ash_futures.receiver),
+        ezsp_transmitter: tokio::spawn(ezsp_futures.transmitter),
+        ezsp_receiver: tokio::spawn(ezsp_futures.receiver),
+    };
+
+    info!(
+        serial_port = %serial_port,
+        mode = %mode_label,
+        protocol_version = desired_version.get(),
+        "negotiating EZSP protocol version"
+    );
+    match timeout(EZSP_INIT_TIMEOUT, client.connect(desired_version)).await {
+        Ok(Ok((connection, callbacks_rx))) => Ok((connection, callbacks_rx, tasks)),
+        Ok(Err(error)) => {
+            tasks.shutdown().await;
+            let announced = match &error {
+                ezsp::Error::ProtocolVersionMismatch { negotiated, .. } => {
+                    NonZero::new(negotiated.protocol_version())
+                        .filter(|version| *version != desired_version)
+                }
+                _ => None,
+            };
+            Err((
+                AppError::service_unavailable(format!(
+                    "Unable to initialize EZSP on {serial_port} in {mode_label} mode: {error}"
+                )),
+                announced,
+            ))
+        }
+        Err(_elapsed) => {
+            tasks.shutdown().await;
+            Err((
+                AppError::service_unavailable(format!(
+                    "Timed out initializing EZSP on {serial_port} in {mode_label} mode"
+                )),
+                None,
+            ))
+        }
+    }
+}
+
 /// Per-command timeout: touchlink scans are legitimately long-running, all
 /// other commands are single EZSP round-trip sequences.
 fn command_timeout_for(command: &NativeZigbeeCommand) -> StdDuration {
@@ -1045,7 +1123,7 @@ async fn try_open_ezsp_context(
     mode_label: &str,
     protocol_version: u8,
 ) -> Result<EzspContext, AppError> {
-    let mut desired_version = NonZero::new(protocol_version).ok_or_else(|| {
+    let desired_version = NonZero::new(protocol_version).ok_or_else(|| {
         AppError::service_unavailable("ZIGBEE_EZSP_PROTOCOL_VERSION must be non-zero")
     })?;
 
@@ -1053,82 +1131,24 @@ async fn try_open_ezsp_context(
     // requested protocol version. On mismatch (e.g. after a firmware upgrade)
     // we rebuild the pipeline once with the version the NCP announced, so the
     // driver adapts to the dongle without config changes.
-    let (connection, callbacks_rx, tasks) = 'negotiate: {
-        let mut last_error: Option<AppError> = None;
-
-        for attempt in 0..2 {
-            let stream = tokio_serial::new(serial_port, baud_rate)
-                .flow_control(flow_control)
-                .open_native_async()
-                .map_err(|error| AppError::service_unavailable(format!(
-                    "Unable to open Zigbee serial port {serial_port} in {mode_label} mode: {error}"
-                )))?;
-
-            let (reader, writer) = tokio::io::split(stream);
-            let (payload_tx, payload_rx) = mpsc::channel::<Payload>(EZSP_CHANNEL_SIZE);
-            let (ash_handle, ash_futures) = start_ash(reader, writer, payload_tx);
-            let (client, ezsp_futures) = EzspClient::run(
-                ash_handle,
-                AshEzspReceiver::new(payload_rx),
-                EZSP_CHANNEL_SIZE,
-            );
-
-            let tasks = PipelineTasks {
-                ash_transmitter: tokio::spawn(ash_futures.transmitter),
-                ash_receiver: tokio::spawn(ash_futures.receiver),
-                ezsp_transmitter: tokio::spawn(ezsp_futures.transmitter),
-                ezsp_receiver: tokio::spawn(ezsp_futures.receiver),
-            };
-
-            info!(
-                serial_port = %serial_port,
-                mode = %mode_label,
-                protocol_version = desired_version.get(),
-                "negotiating EZSP protocol version"
-            );
-            match timeout(EZSP_INIT_TIMEOUT, client.connect(desired_version)).await {
-                Ok(Ok((connection, callbacks_rx))) => {
-                    break 'negotiate (connection, callbacks_rx, tasks);
-                }
-                Ok(Err(error)) => {
-                    tasks.shutdown().await;
-                    if attempt == 0 {
-                        if let ezsp::Error::ProtocolVersionMismatch { negotiated, .. } = &error {
-                            let announced = NonZero::new(negotiated.protocol_version())
-                                .filter(|version| *version != desired_version);
-                            if let Some(version) = announced {
-                                warn!(
-                                    serial_port = %serial_port,
-                                    desired = desired_version.get(),
-                                    negotiated = version.get(),
-                                    "NCP reports a different EZSP protocol version — retrying with it"
-                                );
-                                desired_version = version;
-                                continue;
-                            }
-                        }
-                    }
-                    last_error = Some(AppError::service_unavailable(format!(
-                        "Unable to initialize EZSP on {serial_port} in {mode_label} mode: {error}"
-                    )));
-                    break;
-                }
-                Err(_elapsed) => {
-                    tasks.shutdown().await;
-                    last_error = Some(AppError::service_unavailable(format!(
-                        "Timed out initializing EZSP on {serial_port} in {mode_label} mode"
-                    )));
-                    break;
-                }
+    let (connection, callbacks_rx, tasks) =
+        match open_and_connect(serial_port, baud_rate, flow_control, mode_label, desired_version)
+            .await
+        {
+            Ok(parts) => parts,
+            Err((_error, Some(announced))) => {
+                warn!(
+                    serial_port = %serial_port,
+                    desired = desired_version.get(),
+                    negotiated = announced.get(),
+                    "NCP reports a different EZSP protocol version — retrying with it"
+                );
+                open_and_connect(serial_port, baud_rate, flow_control, mode_label, announced)
+                    .await
+                    .map_err(|(error, _)| error)?
             }
-        }
-
-        return Err(last_error.unwrap_or_else(|| {
-            AppError::service_unavailable(format!(
-                "Unable to initialize EZSP on {serial_port} in {mode_label} mode"
-            ))
-        }));
-    };
+            Err((error, None)) => return Err(error),
+        };
 
     info!(serial_port = %serial_port, mode = %mode_label, "EZSP connection established");
 

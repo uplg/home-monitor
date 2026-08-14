@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { fountainApi } from "@/lib/api";
+import { formatMinutes } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -157,14 +158,6 @@ export function FountainControl({ deviceId }: FountainControlProps) {
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     return mins > 0 ? `${hours}h ${mins}min` : `${hours}h`;
-  };
-
-  const formatMinutes = (minutes: number): string => {
-    if (minutes < 60) return `${minutes} min`;
-    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ${minutes % 60}min`;
-    const days = Math.floor(minutes / 1440);
-    const hours = Math.floor((minutes % 1440) / 60);
-    return `${days}j ${hours}h`;
   };
 
   const isAnyMutating =

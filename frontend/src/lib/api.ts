@@ -704,10 +704,21 @@ export interface BroadlinkSendResponse {
   message: string;
 }
 
+export interface BroadlinkClimateSettings {
+  mode: string;
+  temperature: number;
+  fan: string;
+  vane: string;
+  econo: boolean;
+  stopInMinutes: number | null;
+}
+
 export interface BroadlinkClimateState {
   power: boolean;
   lastCommand: string;
   lastOnCommand: string | null;
+  /** Parsed form of lastOnCommand, provided by the backend. */
+  settings: BroadlinkClimateSettings | null;
   host: string;
   model: string | null;
   updatedAt: string;

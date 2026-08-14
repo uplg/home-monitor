@@ -38,6 +38,10 @@ pub struct StoredClimateState {
     pub last_command: String,
     /// The most recent non-off structured command, used to restore the form.
     pub last_on_command: Option<String>,
+    /// The parsed settings of `last_on_command`, so clients never have to
+    /// re-parse the command grammar.
+    #[serde(default)]
+    pub settings: Option<mitsubishi_ir::ClimateSettings>,
     pub host: String,
     pub model: Option<String>,
     pub updated_at: DateTime<Utc>,
@@ -139,9 +143,19 @@ impl BroadlinkManager {
 
         // A corrupt or unreadable climate-state file must never prevent the
         // backend from starting; the state is only a UI convenience.
-        let climate_state = std::fs::read_to_string(climate_state_path)
+        let mut climate_state = std::fs::read_to_string(climate_state_path)
             .ok()
             .and_then(|content| serde_json::from_str::<StoredClimateState>(content.trim()).ok());
+
+        // Backfill parsed settings for files written before the field existed.
+        if let Some(state) = climate_state.as_mut() {
+            if state.settings.is_none() {
+                state.settings = state
+                    .last_on_command
+                    .as_deref()
+                    .and_then(mitsubishi_ir::parse_climate_settings);
+            }
+        }
 
         Ok(Self {
             codes_path: Arc::new(codes_path.to_path_buf()),
@@ -409,7 +423,7 @@ impl BroadlinkManager {
         let normalized_command = normalize_lookup_value(&command);
         let clock_ticks = mitsubishi_ir::current_clock_ticks();
         if let Some(packet) =
-            mitsubishi_ir::encode_mitsubishi_command(&normalized_command, Some(clock_ticks))
+            mitsubishi_ir::encode_mitsubishi_command(&normalized_command, clock_ticks)
                 .map_err(|error| AppError::http(axum::http::StatusCode::BAD_REQUEST, error))?
         {
             let packet_base64 = STANDARD.encode(&packet);
@@ -473,15 +487,22 @@ impl BroadlinkManager {
         // persist out of order (rare, and the write is a few kilobytes).
         let mut state = self.climate_state.write().await;
         let power = command != "state-off";
-        let last_on_command = if power {
-            Some(command.to_string())
+        let (last_on_command, settings) = if power {
+            (
+                Some(command.to_string()),
+                mitsubishi_ir::parse_climate_settings(command),
+            )
         } else {
-            state.as_ref().and_then(|previous| previous.last_on_command.clone())
+            state
+                .as_ref()
+                .map(|previous| (previous.last_on_command.clone(), previous.settings.clone()))
+                .unwrap_or((None, None))
         };
         *state = Some(StoredClimateState {
             power,
             last_command: command.to_string(),
             last_on_command,
+            settings,
             host: host.to_string(),
             model: model.map(str::to_string),
             updated_at: Utc::now(),
@@ -753,6 +774,10 @@ mod tests {
         assert_eq!(state.last_command, "state-off");
         // Turning off must not forget the last on-state settings.
         assert_eq!(state.last_on_command.as_deref(), Some(on_command));
+        let settings = state.settings.as_ref().expect("settings should be parsed");
+        assert_eq!(settings.mode, "cool");
+        assert_eq!(settings.temperature, 21);
+        assert_eq!(settings.stop_in_minutes, Some(180));
 
         // A fresh manager reloads the persisted state from disk.
         let reloaded =

@@ -4,6 +4,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { broadlinkApi } from "@/lib/api";
+import type { BroadlinkClimateSettings } from "@/lib/api";
+import { formatMinutes } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,10 +26,21 @@ interface BroadlinkClimateControlProps {
   showRefresh?: boolean;
 }
 
-type ClimateMode = "cool" | "heat" | "dry" | "fan" | "auto";
-type ClimateFan = "auto" | "1" | "2" | "3" | "4" | "silent";
-type ClimateVane = "auto" | "highest" | "high" | "middle" | "low" | "lowest" | "swing";
+// Single source for the accepted token lists: the union types, the runtime
+// guards, and (via the guards) restored-state validation all derive from
+// these arrays.
+const CLIMATE_MODES = ["cool", "heat", "dry", "fan", "auto"] as const;
+const CLIMATE_FANS = ["auto", "1", "2", "3", "4", "silent"] as const;
+const CLIMATE_VANES = ["auto", "highest", "high", "middle", "low", "lowest", "swing"] as const;
+
+type ClimateMode = (typeof CLIMATE_MODES)[number];
+type ClimateFan = (typeof CLIMATE_FANS)[number];
+type ClimateVane = (typeof CLIMATE_VANES)[number];
 type ClimateTimerMode = "none" | "stop";
+
+/** Temperature setpoint bounds supported by the Mitsubishi protocol (°C). */
+const TEMP_MIN_C = 16;
+const TEMP_MAX_C = 31;
 
 interface StructuredState {
   power: boolean;
@@ -86,9 +99,8 @@ export function BroadlinkClimateControl({
     const stored = climateStateQuery.data?.state;
     if (hydratedRef.current || !stored) return;
     hydratedRef.current = true;
-    const restored = stored.lastOnCommand ? parseStructuredCommand(stored.lastOnCommand) : null;
-    if (restored) {
-      setStructuredState({ ...restored, power: stored.power });
+    if (stored.settings) {
+      setStructuredState(stateFromSettings(stored.settings, stored.power));
     } else if (!stored.power) {
       setStructuredState((current) => ({ ...current, power: false }));
     }
@@ -288,8 +300,8 @@ export function BroadlinkClimateControl({
                   <Input
                     type="number"
                     inputMode="numeric"
-                    min={16}
-                    max={31}
+                    min={TEMP_MIN_C}
+                    max={TEMP_MAX_C}
                     value={tempInput}
                     className="rounded-2xl"
                     onChange={(event) => setTempInput(event.target.value)}
@@ -300,7 +312,10 @@ export function BroadlinkClimateControl({
                         setTempInput(String(structuredState.temperature));
                         return;
                       }
-                      const clamped = Math.min(31, Math.max(16, Math.round(parsed)));
+                      const clamped = Math.min(
+                        TEMP_MAX_C,
+                        Math.max(TEMP_MIN_C, Math.round(parsed)),
+                      );
                       setStructuredState((current) => ({ ...current, temperature: clamped }));
                       setTempInput(String(clamped));
                     }}
@@ -395,7 +410,7 @@ export function BroadlinkClimateControl({
                             10 minutes), so the control never renders blank. */}
                         {stopAfterOptions(structuredState.stopAfterMinutes).map((minutes) => (
                           <SelectItem key={minutes} value={String(minutes)}>
-                            {formatDuration(minutes)}
+                            {formatMinutes(minutes)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -517,77 +532,33 @@ function buildStructuredCommand(state: StructuredState) {
 }
 
 /**
- * Inverse of buildStructuredCommand, used to restore the form from the last
- * command persisted server-side. Returns null on anything it cannot map so
- * the caller can fall back to defaults.
+ * Builds form state from the backend-parsed settings of the last command.
+ * Individual unknown values fall back to the defaults rather than rejecting
+ * the whole restored state.
  */
-function parseStructuredCommand(command: string): StructuredState | null {
-  if (command === "state-off") {
-    return { ...INITIAL_STATE, power: false };
-  }
-
-  const tokens = command.split("-");
-  if (tokens.length < 7 || tokens[0] !== "state") return null;
-  const [, mode, temperature, fanKeyword, fan, vaneKeyword, vane, ...rest] = tokens;
-  if (fanKeyword !== "fan" || vaneKeyword !== "vane") return null;
-  if (!isClimateMode(mode) || !isClimateFan(fan) || !isClimateVane(vane)) return null;
-  const parsedTemperature = Number(temperature);
-  if (!Number.isInteger(parsedTemperature)) return null;
-
-  const state: StructuredState = {
-    ...INITIAL_STATE,
-    power: true,
-    mode,
-    temperature: Math.min(31, Math.max(16, parsedTemperature)),
-    fan,
-    vane,
+function stateFromSettings(settings: BroadlinkClimateSettings, power: boolean): StructuredState {
+  return {
+    power,
+    mode: isClimateMode(settings.mode) ? settings.mode : INITIAL_STATE.mode,
+    temperature: Math.min(TEMP_MAX_C, Math.max(TEMP_MIN_C, Math.round(settings.temperature))),
+    fan: isClimateFan(settings.fan) ? settings.fan : INITIAL_STATE.fan,
+    vane: isClimateVane(settings.vane) ? settings.vane : INITIAL_STATE.vane,
+    econo: settings.econo,
+    timerMode: settings.stopInMinutes ? "stop" : "none",
+    stopAfterMinutes: settings.stopInMinutes ?? INITIAL_STATE.stopAfterMinutes,
   };
-
-  for (let index = 0; index < rest.length;) {
-    switch (rest[index]) {
-      case "wide":
-        index += 2; // the form always sends wide-center; ignore the value
-        break;
-      case "econo":
-        state.econo = rest[index + 1] === "on";
-        index += 2;
-        break;
-      case "stopin": {
-        const minutes = Number(rest[index + 1]);
-        if (Number.isInteger(minutes) && minutes > 0) {
-          state.timerMode = "stop";
-          state.stopAfterMinutes = minutes;
-        }
-        index += 2;
-        break;
-      }
-      default:
-        // Unknown token (absolute stop/start timers, isee, …): not produced
-        // by this form, so give up rather than restore a wrong state.
-        return null;
-    }
-  }
-
-  return state;
 }
 
 function isClimateMode(value: string): value is ClimateMode {
-  return ["cool", "heat", "dry", "fan", "auto"].includes(value);
+  return (CLIMATE_MODES as readonly string[]).includes(value);
 }
 
 function isClimateFan(value: string): value is ClimateFan {
-  return ["auto", "1", "2", "3", "4", "silent"].includes(value);
+  return (CLIMATE_FANS as readonly string[]).includes(value);
 }
 
 function isClimateVane(value: string): value is ClimateVane {
-  return ["auto", "highest", "high", "middle", "low", "lowest", "swing"].includes(value);
-}
-
-function formatDuration(minutes: number) {
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return remainder === 0 ? `${hours} h` : `${hours} h ${String(remainder).padStart(2, "0")}`;
+  return (CLIMATE_VANES as readonly string[]).includes(value);
 }
 
 function stopAfterOptions(currentMinutes: number): number[] {
