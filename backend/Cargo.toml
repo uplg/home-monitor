@@ -33,7 +33,7 @@ jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust
 md5 = "0.8.0"
 reqwest = { version = "0.13.3", default-features = false, features = ["json", "query", "rustls", "form"] }
 rbroadlink = "0.4.2"
-rust-async-tuyapi = { git = "https://github.com/uplg/rust-async-tuyapi", rev = "b4f3b0c31f47d251c7e13585a8ce1babda984332" }
+rust-async-tuyapi = { git = "https://github.com/uplg/rust-async-tuyapi", rev = "6cd9180b296a04ef9e6751b594c6235aa79b7157" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"

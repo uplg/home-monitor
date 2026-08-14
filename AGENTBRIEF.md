@@ -120,6 +120,7 @@ Driver design (`zigbee_native.rs`):
 | Hue lamps | BLE (btleplug), feature-gated | stub on Pi builds |
 | Broadlink | UDP discovery + IR send/learn (rbroadlink) | codes in broadlink-codes.json |
 | Tempo | RTE + data.gouv + Open-Meteo HTTP APIs | calibrated prediction model, seasons cached |
+| Nabaztag (garenne) | UDP 9998 `grn1 ` control + GET /status | rabbit runs clapier's garenne firmware; clapier server is hosted on the same Pi (/opt/clapier, OpenRC). `nabaztag.rs` pushes the daily Tempo colors every 15 min: today = static belly LED (`led 2 RRGGBB`), tomorrow = ear position. Config: `NABAZTAG_HOST` (rabbit IP) + nabaztag.json. All firmware tooling lives in uplg/nabgcc (branch tooling); nothing firmware-related remains here. |
 
 ## 6. Frontend notes
 

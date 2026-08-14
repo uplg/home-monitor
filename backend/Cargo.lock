@@ -2507,7 +2507,7 @@ dependencies = [
 [[package]]
 name = "rust-async-tuyapi"
 version = "1.2.0"
-source = "git+https://github.com/uplg/rust-async-tuyapi?rev=b4f3b0c31f47d251c7e13585a8ce1babda984332#b4f3b0c31f47d251c7e13585a8ce1babda984332"
+source = "git+https://github.com/uplg/rust-async-tuyapi?rev=6cd9180b296a04ef9e6751b594c6235aa79b7157#6cd9180b296a04ef9e6751b594c6235aa79b7157"
 dependencies = [
  "aes 0.8.4",
  "aes-gcm",

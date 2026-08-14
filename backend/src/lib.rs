@@ -112,6 +112,36 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
         }
     });
 
+    // Mirror the daily Tempo colors on the Nabaztag. The push is two UDP
+    // datagrams and idempotent, so it simply repeats every 15 minutes: that
+    // also re-applies the colors after a rabbit reboot.
+    let tempo_rabbit = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(900));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            let config = tempo_rabbit.nabaztag.config().await;
+            if !config.tempo_enabled || config.host.is_none() {
+                continue;
+            }
+            match tempo_rabbit.tempo.get_tempo_data(false).await {
+                Ok((data, _)) => {
+                    if let Some(today) = data.today.color.as_deref() {
+                        if let Err(error) = tempo_rabbit
+                            .nabaztag
+                            .push_tempo(today, data.tomorrow.color.as_deref())
+                            .await
+                        {
+                            tracing::debug!(%error, "tempo push to the rabbit failed");
+                        }
+                    }
+                }
+                Err(error) => tracing::debug!(%error, "tempo data unavailable for rabbit push"),
+            }
+        }
+    });
+
     let app = build_app(state.clone());
     Ok((app, state))
 }
@@ -124,8 +154,7 @@ pub fn build_app(state: AppState) -> Router {
         .nest("/devices", routes::devices::router())
         .nest("/hue-lamps", routes::hue::router())
         .nest("/meross", routes::meross::router())
-        // Nabaztag is disabled until the physical device is repaired.
-        // .nest("/nabaztag", routes::nabaztag::router())
+        .nest("/nabaztag", routes::nabaztag::router())
         .nest("/tempo", routes::tempo::router())
         .nest("/zigbee", routes::zigbee::router());
 

@@ -8,6 +8,7 @@
 - Control Philips Hue lamps over Bluetooth and Zigbee.
 - Handle Hue dimmer switch (v1 at least), global handling, On/off change power state for every connected zigbee device, dim up/down same.
 - Query Tempo data, predictions, history, and calibration helpers.
+- Mirror the daily Tempo colors on a Nabaztag running the garenne firmware (belly LED = today, ears = tomorrow).
 - Keep access private with local authentication and secure session cookies.
 
 ![Maison](/screenshots/maison.jpg?v=1779566103)
