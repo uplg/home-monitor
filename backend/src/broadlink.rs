@@ -451,51 +451,59 @@ impl BroadlinkManager {
 
         drop(codes);
 
-        self.send_packet(
-            host,
-            local_ip,
-            code.packet_base64,
-            Some(code.id),
-            Some(code.command),
-        )
-        .await
+        let result = self
+            .send_packet(
+                host,
+                local_ip,
+                code.packet_base64,
+                Some(code.id),
+                Some(code.command.clone()),
+            )
+            .await?;
+        self.record_raw_climate_command(&code.command, &result.host, normalized_model.as_deref())
+            .await;
+        Ok(result)
     }
 
     /// Remembers the last commanded climate state and persists it. Failures
     /// are logged but never propagated: the IR command itself already went
     /// out, and the stored state is only used to restore the UI.
     async fn record_climate_state(&self, command: &str, host: &str, model: Option<&str>) {
-        let updated = {
-            let mut state = self.climate_state.write().await;
-            let power = command != "state-off";
-            let last_on_command = if power {
-                Some(command.to_string())
-            } else {
-                state.as_ref().and_then(|previous| previous.last_on_command.clone())
-            };
-            let next = StoredClimateState {
-                power,
-                last_command: command.to_string(),
-                last_on_command,
-                host: host.to_string(),
-                model: model.map(str::to_string),
-                updated_at: Utc::now(),
-            };
-            *state = Some(next.clone());
-            next
+        // The file write happens under the lock so concurrent sends cannot
+        // persist out of order (rare, and the write is a few kilobytes).
+        let mut state = self.climate_state.write().await;
+        let power = command != "state-off";
+        let last_on_command = if power {
+            Some(command.to_string())
+        } else {
+            state.as_ref().and_then(|previous| previous.last_on_command.clone())
         };
+        *state = Some(StoredClimateState {
+            power,
+            last_command: command.to_string(),
+            last_on_command,
+            host: host.to_string(),
+            model: model.map(str::to_string),
+            updated_at: Utc::now(),
+        });
+        persist_climate_state(self.climate_state_path.as_path(), state.as_ref());
+    }
 
-        let payload = match serde_json::to_string_pretty(&updated) {
-            Ok(payload) => payload,
-            Err(error) => {
-                tracing::warn!(?error, "failed to serialize climate state");
-                return;
-            }
+    /// Records that a raw (learned, non-structured) command was sent. Its
+    /// effect on the unit is unknown, so power/last-on state are left as-is;
+    /// only the audit fields are refreshed.
+    async fn record_raw_climate_command(&self, command: &str, host: &str, model: Option<&str>) {
+        let mut state = self.climate_state.write().await;
+        let Some(current) = state.as_mut() else {
+            return;
         };
-        if let Err(error) = write_string_to_path(self.climate_state_path.as_path(), &format!("{payload}\n"))
-        {
-            tracing::warn!(?error, "failed to persist climate state");
+        current.last_command = command.to_string();
+        current.host = host.to_string();
+        if model.is_some() {
+            current.model = model.map(str::to_string);
         }
+        current.updated_at = Utc::now();
+        persist_climate_state(self.climate_state_path.as_path(), state.as_ref());
     }
 
     async fn persist_codes(&self) -> Result<(), AppError> {
@@ -504,6 +512,18 @@ impl BroadlinkManager {
             serde_json::to_string_pretty(&*codes)?
         };
         write_string_to_path(self.codes_path.as_path(), &format!("{payload}\n"))
+    }
+}
+
+fn persist_climate_state(path: &Path, state: Option<&StoredClimateState>) {
+    let Some(state) = state else { return };
+    match serde_json::to_string_pretty(state) {
+        Ok(payload) => {
+            if let Err(error) = write_string_to_path(path, &format!("{payload}\n")) {
+                tracing::warn!(?error, "failed to persist climate state");
+            }
+        }
+        Err(error) => tracing::warn!(?error, "failed to serialize climate state"),
     }
 }
 

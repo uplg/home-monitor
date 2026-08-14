@@ -160,6 +160,10 @@ pub struct ZigbeeManager {
 struct ZigbeeManagerInner {
     store: ZigbeeStore,
     lamps: RwLock<HashMap<String, ZigbeeLampRuntime>>,
+    /// IEEE addresses that must never appear as lamps, enforced both at load
+    /// time and on every runtime discovery sync (a blacklisted device that is
+    /// still on the mesh keeps announcing itself).
+    blacklisted_addresses: HashSet<String>,
     pairing: RwLock<PairingRuntime>,
     runtime: NativeZigbeeRuntime,
     permit_join_seconds: u16,
@@ -214,6 +218,21 @@ impl ZigbeeManager {
             }
         });
 
+        // Records without a node_id cannot be seeded into the native driver
+        // (typically leftovers from the removed zigbee2mqtt era). Surface
+        // them loudly instead of leaving them silently invisible forever.
+        let unseedable = lamps
+            .values()
+            .filter(|lamp| lamp.config.node_id.is_none())
+            .map(|lamp| lamp.config.ieee_address.clone())
+            .collect::<Vec<_>>();
+        if !unseedable.is_empty() {
+            warn!(
+                addresses = ?unseedable,
+                "zigbee lamps without a node_id cannot be driven natively; re-pair them (or remove them from zigbee-lamps.json)"
+            );
+        }
+
         let known_devices = lamps
             .values()
             .filter_map(|lamp| {
@@ -242,6 +261,7 @@ impl ZigbeeManager {
             inner: Arc::new(ZigbeeManagerInner {
                 store,
                 lamps: RwLock::new(lamps),
+                blacklisted_addresses,
                 pairing: RwLock::new(PairingRuntime::default()),
                 runtime,
                 permit_join_seconds: config.zigbee_permit_join_seconds,
@@ -452,6 +472,10 @@ impl ZigbeeManager {
         let mut changed = false;
 
         for device in discovered {
+            if self.inner.blacklisted_addresses.contains(&device.eui64) {
+                continue;
+            }
+
             // Skip devices that haven't completed their interview or discovery yet (no
             // endpoint means we don't know what the device is — it could be a
             // sleepy remote still being discovered).

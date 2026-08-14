@@ -390,7 +390,10 @@ export function BroadlinkClimateControl({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {STOP_AFTER_CHOICES.map((minutes) => (
+                        {/* Include the current value even when it isn't a
+                            preset (a restored state may carry any multiple of
+                            10 minutes), so the control never renders blank. */}
+                        {stopAfterOptions(structuredState.stopAfterMinutes).map((minutes) => (
                           <SelectItem key={minutes} value={String(minutes)}>
                             {formatDuration(minutes)}
                           </SelectItem>
@@ -585,4 +588,12 @@ function formatDuration(minutes: number) {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
   return remainder === 0 ? `${hours} h` : `${hours} h ${String(remainder).padStart(2, "0")}`;
+}
+
+function stopAfterOptions(currentMinutes: number): number[] {
+  const options = new Set<number>(STOP_AFTER_CHOICES);
+  if (Number.isInteger(currentMinutes) && currentMinutes > 0) {
+    options.add(currentMinutes);
+  }
+  return [...options].sort((left, right) => left - right);
 }

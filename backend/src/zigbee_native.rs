@@ -159,6 +159,11 @@ const EZSP_COMMAND_TIMEOUT: StdDuration = StdDuration::from_secs(15);
 /// per-device delays, so they get a larger budget than regular commands.
 const TOUCHLINK_COMMAND_TIMEOUT: StdDuration = StdDuration::from_secs(90);
 
+/// Budget for one desired-state restore sweep (multiple devices, several
+/// unicasts each). Exceeding it pauses the sweep until the next tick — it
+/// does not tear the pipeline down.
+const RESTORE_SWEEP_TIMEOUT: StdDuration = StdDuration::from_secs(60);
+
 /// Upper bound for the full network bring-up (endpoint + stack configuration,
 /// network init/form, security state). Prevents the driver from being stuck
 /// in `Starting` forever when the NCP hangs mid-initialization.
@@ -166,8 +171,15 @@ const NETWORK_INIT_TIMEOUT: StdDuration = StdDuration::from_secs(60);
 
 /// Upper bound a caller of `NativeZigbeeRuntime::send` may wait for the reply.
 /// Must exceed the worst per-command driver timeout plus queueing behind other
-/// commands; it exists so HTTP handlers can never hang indefinitely.
+/// commands; it exists so HTTP handlers can never hang indefinitely. Keep the
+/// sum with `COMMAND_ENQUEUE_TIMEOUT` below the 180s global HTTP timeout so
+/// callers see the specific error, not a generic gateway timeout.
 const COMMAND_REPLY_TIMEOUT: StdDuration = StdDuration::from_secs(120);
+
+/// Upper bound for getting a command *into* the driver queue. If the 32-slot
+/// queue stays full this long, the driver is wedged or saturated — fail fast
+/// rather than stacking more work behind it.
+const COMMAND_ENQUEUE_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 
 /// Delay before attempting to reconnect after a pipeline failure.
 const RECONNECT_DELAY: StdDuration = StdDuration::from_secs(2);
@@ -400,7 +412,7 @@ impl NativeZigbeeRuntime {
         // Both steps are bounded so an HTTP caller can never hang forever,
         // even if the driver event loop wedges while reporting Ready.
         timeout(
-            COMMAND_REPLY_TIMEOUT,
+            COMMAND_ENQUEUE_TIMEOUT,
             self.command_tx.send(DriverRequest { command, reply_tx }),
         )
         .await
@@ -753,6 +765,14 @@ async fn run_native_driver(
                         return;
                     };
 
+                    // If the caller already gave up (HTTP timeout, dropped
+                    // connection), executing the queued command now would be
+                    // a surprise double execution after the user retried.
+                    if request.reply_tx.is_closed() {
+                        debug!("skipping queued zigbee command whose caller gave up");
+                        continue;
+                    }
+
                     // Wrap the command in a timeout.  If it fires, the EZSP
                     // pipeline is assumed dead — we tear everything down and
                     // reconnect.  This is safe because we never reuse the
@@ -906,9 +926,15 @@ async fn run_native_driver(
                         {
                             // Device state changed — sync to frontend and try to
                             // restore desired state on newly-reachable devices.
-                            // Bounded: this issues EZSP round-trips per device.
-                            if timeout(EZSP_COMMAND_TIMEOUT, restore_desired_state(&mut context)).await.is_err() {
-                                break 'event_loop Some("desired-state restore timed out".to_string());
+                            // Bounded, but a timeout is NOT treated as a dead
+                            // pipeline: after a power outage many devices flip
+                            // reachable at once and the sweep can legitimately
+                            // exceed the budget on a healthy-but-busy link. The
+                            // unapplied flags persist, so the sweep resumes next
+                            // tick; genuine deadness is caught by the command
+                            // timeout and the watchdog.
+                            if timeout(RESTORE_SWEEP_TIMEOUT, restore_desired_state(&mut context)).await.is_err() {
+                                warn!(serial_port = %serial_port, "desired-state restore sweep exceeded its budget — will resume next tick");
                             }
                             sync_status_devices(&status, &context.joined_devices).await;
                         }
@@ -1489,9 +1515,18 @@ fn configured_network_channel() -> u8 {
 }
 
 fn configured_network_tx_power() -> i8 {
-    parse_u8_env("ZIGBEE_TX_POWER")
-        .and_then(|value| i8::try_from(value).ok())
-        .unwrap_or(DEFAULT_NETWORK_TX_POWER)
+    let Ok(raw) = std::env::var("ZIGBEE_TX_POWER") else {
+        return DEFAULT_NETWORK_TX_POWER;
+    };
+    // Radio power is signed dBm; negative values are legitimate.
+    raw.trim().parse::<i8>().unwrap_or_else(|_| {
+        warn!(
+            value = %raw,
+            default = DEFAULT_NETWORK_TX_POWER,
+            "invalid ZIGBEE_TX_POWER (expected dBm in -128..=127), using default"
+        );
+        DEFAULT_NETWORK_TX_POWER
+    })
 }
 
 fn configured_pan_id() -> Option<u16> {

@@ -130,11 +130,15 @@ pub fn encode_mitsubishi_command(
     Ok(Some(encode_broadlink_packet(&raw)))
 }
 
-/// Current local time as 10-minute ticks since midnight, the unit used by the
-/// Mitsubishi clock/timer bytes.
+/// Current wall-clock time as 10-minute ticks since midnight, the unit used
+/// by the Mitsubishi clock/timer bytes.
+///
+/// Uses an explicit timezone rather than `chrono::Local`: on the Alpine Pi
+/// deployment there is no tzdata, so `Local` silently degrades to UTC and
+/// every absolute timer would fire hours off.
 pub fn current_clock_ticks() -> u8 {
     use chrono::Timelike;
-    let now = chrono::Local::now();
+    let now = chrono::Utc::now().with_timezone(&chrono_tz::Europe::Paris);
     (now.hour() * 6 + now.minute() / 10) as u8
 }
 
