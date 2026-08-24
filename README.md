@@ -9,6 +9,7 @@
 - Handle Hue dimmer switch (v1 at least), global handling, On/off change power state for every connected zigbee device, dim up/down same.
 - Query Tempo data, predictions, history, and calibration helpers.
 - Mirror the daily Tempo colors on a Nabaztag running the garenne firmware (belly LED = today, ears = tomorrow).
+- Turn a set-top-box remote control into a house remote: an AirTies AIR 7310T (custom firmware) decodes its Ruwido IR remote and forwards every key press to maison, which maps buttons to actions. See "IR remote" below.
 - Keep access private with local authentication and secure session cookies.
 
 ![Maison](/screenshots/maison.jpg?v=1786751396)
@@ -31,11 +32,44 @@ The Rust backend reads these files directly from the repo root:
 - `zigbee-lamps.json`
 - `zigbee-lamps-blacklist.json`
 - `climate-state.json`
+- `ir-keymap.json`
 - `mosquitto/`
 
 Tempo cache and calibration files now live in `cache/tempo/`.
 
 Tempo recalibration workflow is documented in `docs/tempo-calibration.md`.
+
+## IR remote (AirTies STB)
+
+An AirTies AIR 7310T set-top box running its custom firmware
+([uplg/BCM7231B2](https://github.com/uplg/BCM7231B2)) decodes the Ruwido IR
+remote in hardware; its
+`kird` daemon POSTs every key event to `POST /api/ir/key`, authenticated with
+the `IR_API_TOKEN` machine token (constant-time compare, independent from the
+JWT session auth; set the same token in the STB's `device/kird.conf`).
+
+Buttons are configured from the frontend: Dashboard → Télécommande. The page
+draws the physical remote (mapped keys highlighted), captures a key by asking
+you to press it (it polls `GET /api/ir/recent`), and each binding holds an
+ordered list of actions. One button can drive several devices, and a Test
+button dry-runs the actions without saving.
+
+Available actions, all "reversible" where it makes sense (`on` / `off` /
+`toggle`, toggle reads the device's current state and flips it):
+
+- Nabaztag command (garenne grammar: `dance`, `chor /vl/config/chor/taichi.chor`, `ears 8 8`, …)
+- Zigbee lamp power (on/off/toggle) and brightness (0-254, `repeat` fires while the button is held)
+- Meross plug power (on/off/toggle)
+- Broadlink saved IR code
+- Mitsubishi AC toggle: turns the AC on with structured settings
+  (mode/temperature/fan/vane pickers) or off if the last commanded state was
+  on. The blast is delayed ~1.2 s so the remote's own IR repeats cannot
+  collide with the RM4 transmission at the AC's receiver.
+
+The keymap persists in `ir-keymap.json` (server-side, survives reboots and
+deployments). Phantom double-presses from marginal IR reception are debounced
+server-side (1.2 s per key); unmapped keys return 200 and are logged
+(`unmapped IR key`) so new buttons are easy to discover.
 
 ## Prerequisites
 
@@ -80,6 +114,7 @@ Main settings:
 - `DISABLE_BLUETOOTH`: set `true` to disable Hue BLE support
 - `ZIGBEE_SERIAL_PORT`: serial path of the Zigbee USB dongle
 - `ZIGBEE_ADAPTER`: adapter type, `ember` for MG21/EZSP dongles such as the Sonoff Dongle Lite MG21
+- `IR_API_TOKEN`: machine token for the STB IR bridge (empty/unset disables `/api/ir/key`)
 - `AUTH_COOKIE_NAME`: session cookie name
 - `AUTH_COOKIE_SECURE`: keep `true` when the app is exposed through HTTPS/Cloudflare
 - `AUTH_RATE_LIMIT_ATTEMPTS`: max failed login attempts per IP+username window

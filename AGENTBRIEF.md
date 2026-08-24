@@ -120,6 +120,7 @@ Driver design (`zigbee_native.rs`):
 | Hue lamps | BLE (btleplug), feature-gated | stub on Pi builds |
 | Broadlink | UDP discovery + IR send/learn (rbroadlink) | codes in broadlink-codes.json |
 | Tempo | RTE + data.gouv + Open-Meteo HTTP APIs | calibrated prediction model, seasons cached |
+| IR remote (AirTies STB) | HTTP in: the STB's `kird` daemon POSTs Ruwido key events to `/api/ir/key`, bearer-authed with `IR_API_TOKEN` (machine token, `MachineClient` extractor, deliberately not chained with JWT auth) | keycode→action map in `ir-keymap.json` (mutable server-side state, edited via the /remote configurator, never pushed by deploy.sh). Presses are debounced 1.2 s per key (phantom doubles from marginal IR); climate_toggle waits 1.2 s before blasting (remote/RM4 IR collision). Unmapped keys return 200 and land in `/api/ir/recent` for capture |
 | Nabaztag (garenne) | UDP 9998 `grn1 ` control + GET /status | rabbit runs clapier's garenne firmware; clapier server is hosted on the same Pi (/opt/clapier, OpenRC). `nabaztag.rs` pushes the daily Tempo colors every 15 min: today = static belly LED (`led 2 RRGGBB`), tomorrow = ear position. Config: `NABAZTAG_HOST` (rabbit IP) + nabaztag.json. All firmware tooling lives in uplg/nabgcc (branch portal-ui); nothing firmware-related remains here. |
 
 ## 6. Frontend notes
