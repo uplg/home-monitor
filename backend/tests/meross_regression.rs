@@ -180,6 +180,8 @@ fn test_config() -> Config {
         zigbee_lamps_path: source_root.join("zigbee-lamps.json"),
         zigbee_lamps_blacklist_path: source_root.join("zigbee-lamps-blacklist.json"),
         zigbee_permit_join_seconds: 120,
+        ir_keymap_path: source_root.join("ir-keymap.json"),
+        ir_api_token: Some("test-ir-token".to_string()),
         source_root,
     }
 }

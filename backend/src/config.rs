@@ -26,6 +26,8 @@ pub struct Config {
     pub nabaztag_config_path: PathBuf,
     pub nabaztag_host: Option<String>,
     pub zigbee_permit_join_seconds: u16,
+    pub ir_keymap_path: PathBuf,
+    pub ir_api_token: Option<String>,
 }
 
 impl Config {
@@ -85,6 +87,19 @@ impl Config {
         let nabaztag_config_path = env::var("NABAZTAG_JSON_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| source_root.join("nabaztag.json"));
+
+        let ir_keymap_path = env::var("IR_KEYMAP_JSON_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| source_root.join("ir-keymap.json"));
+
+        // Machine token for the STB IR bridge (kird); empty/unset = IR API off.
+        let ir_api_token = env::var("IR_API_TOKEN").ok().and_then(|value| {
+            if value.is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
 
         let nabaztag_host = env::var("NABAZTAG_HOST").ok().and_then(|value| {
             if value.is_empty() {
@@ -164,6 +179,8 @@ impl Config {
             nabaztag_config_path,
             nabaztag_host,
             zigbee_permit_join_seconds,
+            ir_keymap_path,
+            ir_api_token,
         }
     }
 
@@ -193,6 +210,8 @@ impl Config {
             nabaztag_config_path: source_root.join("nabaztag.json"),
             nabaztag_host: None,
             zigbee_permit_join_seconds: 120,
+            ir_keymap_path: source_root.join("ir-keymap.json"),
+            ir_api_token: Some("test-ir-token".to_string()),
             source_root,
         }
     }

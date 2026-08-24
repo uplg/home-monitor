@@ -1,0 +1,29 @@
+{
+  "353": {
+    "label": "OK — taichi + toggle clim",
+    "actions": [
+      { "action": "nabaztag", "command": "chor taichi" },
+      { "action": "climate_toggle", "host": "192.168.1.2", "on_command": "state-cool-16-fan-4-vane-swing" }
+    ]
+  },
+  "116": {
+    "label": "Power — toggle lumière salon",
+    "actions": [
+      { "action": "zigbee_power", "lamp": "17ff040901881700" }
+    ]
+  },
+  "115": {
+    "label": "Vol+ — salon plus lumineux",
+    "actions": [
+      { "action": "zigbee_brightness", "lamp": "17ff040901881700", "brightness": 254 }
+    ],
+    "repeat": true
+  },
+  "2": {
+    "label": "1 — TV power + toggle prise",
+    "actions": [
+      { "action": "broadlink_code", "host": "192.168.1.2", "code_id": "tv-power" },
+      { "action": "meross_power", "device": "192.168.1.131" }
+    ]
+  }
+}

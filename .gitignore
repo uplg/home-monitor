@@ -44,3 +44,4 @@ mosquitto/certs/
 
 # screenshot tool profile
 scripts/.shot-profile/
+ir-keymap.json

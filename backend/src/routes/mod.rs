@@ -2,6 +2,7 @@ pub mod auth;
 pub mod broadlink;
 pub mod devices;
 pub mod hue;
+pub mod ir;
 pub mod meross;
 pub mod nabaztag;
 pub mod root;

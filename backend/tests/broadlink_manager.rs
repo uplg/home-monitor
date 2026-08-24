@@ -138,6 +138,8 @@ fn test_config() -> Config {
         nabaztag_config_path: source_root.join("nabaztag.json"),
         nabaztag_host: None,
         zigbee_permit_join_seconds: 120,
+        ir_keymap_path: source_root.join("ir-keymap.json"),
+        ir_api_token: Some("test-ir-token".to_string()),
         source_root,
     }
 }

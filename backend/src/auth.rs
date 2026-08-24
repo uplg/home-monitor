@@ -129,6 +129,45 @@ where
     }
 }
 
+/// Extractor for machine-to-machine clients (the kird IR bridge on the STB):
+/// a raw bearer token compared in constant time against `IR_API_TOKEN`.
+/// Fails closed when the token is not configured. Deliberately not chained
+/// with the JWT path: a machine route accepts the machine token only.
+#[derive(Debug, Clone)]
+pub struct MachineClient;
+
+impl<S> FromRequestParts<S> for MachineClient
+where
+    AppState: axum::extract::FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let app_state = AppState::from_ref(state);
+        let Some(expected) = app_state.config.ir_api_token.as_deref() else {
+            return Err(AppError::http(
+                StatusCode::UNAUTHORIZED,
+                "Machine API disabled: IR_API_TOKEN is not configured",
+            ));
+        };
+        let token = extract_bearer_token(&parts.headers)?;
+        if !constant_time_eq(token.as_bytes(), expected.as_bytes()) {
+            return Err(AppError::unauthorized("Invalid machine token"));
+        }
+        Ok(Self)
+    }
+}
+
+/// Byte-wise comparison without data-dependent early exit; the length check
+/// short-circuits, which only reveals the token length, not its content.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 pub fn extract_auth_token<'a>(headers: &'a HeaderMap, cookie_name: &str) -> Result<&'a str, AppError> {
     extract_bearer_token(headers).or_else(|_| extract_cookie_token(headers, cookie_name))
 }

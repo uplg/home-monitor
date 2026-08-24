@@ -7,6 +7,7 @@ pub mod hue;
 #[cfg(not(feature = "bluetooth"))]
 #[path = "hue_stub.rs"]
 pub mod hue;
+pub mod ir;
 pub mod meross;
 pub mod mitsubishi_ir;
 pub mod nabaztag;
@@ -29,6 +30,7 @@ use broadlink::BroadlinkManager;
 use config::Config;
 use error::AppError;
 use hue::HueManager;
+use ir::IrManager;
 use nabaztag::NabaztagManager;
 use tower_http::cors::CorsLayer;
 use tower_http::timeout::TimeoutLayer;
@@ -47,6 +49,7 @@ pub struct AppState {
     pub(crate) refresh_store: RefreshTokenStore,
     pub(crate) broadlink: BroadlinkManager,
     pub(crate) hue: HueManager,
+    pub(crate) ir: IrManager,
     pub(crate) meross: MerossManager,
     pub(crate) nabaztag: NabaztagManager,
     pub(crate) tempo: TempoService,
@@ -76,6 +79,7 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
     let broadlink =
         BroadlinkManager::new(&config.broadlink_codes_path, &config.climate_state_path)?;
     let hue = HueManager::new(config.as_ref())?;
+    let ir = IrManager::new(&config.ir_keymap_path)?;
     let meross = MerossManager::new(&config.meross_devices_path)?;
     let nabaztag = NabaztagManager::new(
         &config.nabaztag_config_path,
@@ -92,6 +96,7 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
         refresh_store,
         broadlink,
         hue,
+        ir,
         meross,
         nabaztag,
         tempo,
@@ -160,6 +165,7 @@ pub fn build_app(state: AppState) -> Router {
         .nest("/broadlink", routes::broadlink::router())
         .nest("/devices", routes::devices::router())
         .nest("/hue-lamps", routes::hue::router())
+        .nest("/ir", routes::ir::router())
         .nest("/meross", routes::meross::router())
         .nest("/nabaztag", routes::nabaztag::router())
         .nest("/tempo", routes::tempo::router())
