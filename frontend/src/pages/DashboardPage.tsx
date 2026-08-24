@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { devicesApi, hueLampsApi, merossApi, zigbeeLampsApi, type Device } from "@/lib/api";
+import { devicesApi, hueLampsApi, irApi, merossApi, zigbeeLampsApi, type Device } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,9 @@ import {
   Lightbulb,
   Plug,
   Search,
+  Settings,
   Snowflake,
+  Radio,
 } from "lucide-react";
 
 const deviceIcons: Record<string, React.ReactNode> = {
@@ -218,6 +220,13 @@ export function DashboardPage() {
     queryKey: ["meross-plugs"],
     queryFn: merossApi.list,
     refetchInterval: 5000,
+  });
+
+  // IR remote keymap (count only — the configurator lives on its own page)
+  const { data: irKeymapData } = useQuery({
+    queryKey: ["ir-keymap"],
+    queryFn: irApi.keymap,
+    staleTime: 30000,
   });
 
   const connectAllMutation = useMutation({
@@ -536,6 +545,37 @@ export function DashboardPage() {
         />
 
         <BroadlinkClimateControl defaultModel="msz-hj5va" compact showRefresh={false} />
+      </section>
+
+      <section className="space-y-4">
+        <DashboardSectionHeader
+          icon={<Radio className="h-5 w-5" />}
+          iconClassName="bg-muted text-muted-foreground"
+          title={t("remote.title")}
+          description={t("remote.dashboardSubtitle")}
+        />
+
+        <Card className="border-0 bg-card/85 shadow-sm">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {irKeymapData && Object.keys(irKeymapData.keymap).length > 0
+                ? t("remote.bindingCount", {
+                    count: Object.keys(irKeymapData.keymap).length,
+                  })
+                : t("remote.noBindings")}
+            </p>
+            <Link to="/remote">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full border-border bg-card/80 hover:bg-card sm:w-auto"
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                {t("remote.configure")}
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

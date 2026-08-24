@@ -960,6 +960,81 @@ export interface NabaztagTempoPushResponse {
   result: NabaztagTempoPushResult;
 }
 
+// ---------------------------------------------------------------------------
+// IR remote (AirTies STB) API
+// ---------------------------------------------------------------------------
+
+/** Force a state, or flip the current one — the remote-control default. */
+export type IrSwitchState = "on" | "off" | "toggle";
+
+export type IrAction =
+  | { action: "nabaztag"; command: string }
+  | { action: "zigbee_power"; lamp: string; state: IrSwitchState }
+  | { action: "zigbee_brightness"; lamp: string; brightness: number }
+  | { action: "broadlink_code"; host: string; code_id: string }
+  | { action: "meross_power"; device: string; state: IrSwitchState }
+  | {
+      action: "climate_toggle";
+      host: string;
+      /** Structured Mitsubishi command, e.g. "state-cool-16-fan-4-vane-swing". */
+      on_command: string;
+      model?: string;
+    };
+
+export interface IrBinding {
+  /** Fired in order; one failing action does not stop the others. */
+  actions: IrAction[];
+  label?: string;
+  /** Also fire on kernel autorepeat events while the button is held. */
+  repeat?: boolean;
+}
+
+export interface IrKeymapResponse {
+  success: boolean;
+  /** Keycodes are numbers, serialized as JSON object keys (strings). */
+  keymap: Record<string, IrBinding>;
+}
+
+export interface IrEvent {
+  code: number;
+  /** 1 = press, 2 = autorepeat, 0 = release. */
+  value: number;
+  mapped: boolean;
+  receivedAt: string;
+}
+
+export interface IrRecentResponse {
+  success: boolean;
+  events: IrEvent[];
+}
+
+export interface IrTestResponse {
+  success: boolean;
+  message: string;
+  /** One entry per executed action ("ok: ..." / "failed: ..."). */
+  results: string[];
+}
+
+export interface IrSimpleResponse {
+  success: boolean;
+  message: string;
+}
+
+export const irApi = {
+  keymap: () => api<IrKeymapResponse>("/ir/keymap"),
+
+  setBinding: (code: number, binding: IrBinding) =>
+    api<IrSimpleResponse>(`/ir/keymap/${code}`, { method: "PUT", body: binding }),
+
+  removeBinding: (code: number) =>
+    api<IrSimpleResponse>(`/ir/keymap/${code}`, { method: "DELETE" }),
+
+  recent: () => api<IrRecentResponse>("/ir/recent"),
+
+  test: (actions: IrAction[]) =>
+    api<IrTestResponse>("/ir/test", { method: "POST", body: { actions } }),
+};
+
 export const nabaztagApi = {
   status: () => api<NabaztagStatusResponse>("/nabaztag"),
 

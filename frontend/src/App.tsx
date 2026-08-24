@@ -7,6 +7,7 @@ import { HueLampPage } from "./pages/HueLampPage";
 import { MerossPlugPage } from "./pages/MerossPlugPage";
 import { ZigbeeLampPage } from "./pages/ZigbeeLampPage";
 import TempoPredictionPage from "./pages/TempoPredictionPage";
+import { RemoteConfigPage } from "./pages/RemoteConfigPage";
 import { Layout } from "./components/Layout";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="zigbee-lamp/:lampId" element={<ZigbeeLampPage />} />
         <Route path="meross/:deviceId" element={<MerossPlugPage />} />
         <Route path="tempo-predictions" element={<TempoPredictionPage />} />
+        <Route path="remote" element={<RemoteConfigPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
