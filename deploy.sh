@@ -28,6 +28,7 @@ MUTABLE_RUNTIME_FILES=(
   climate-state.json
   nabaztag.json
   refresh-tokens.json
+  ir-keymap.json
 )
 
 usage() {
@@ -151,13 +152,16 @@ APP_DIR="$1"
 SERVICE_USER="$2"
 SERVICE_GROUP="$3"
 chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/cache" 2>/dev/null || true
+# Pre-create absent state files: APP_DIR belongs to root, so the backend
+# cannot create them itself (EACCES on first persist — bit us with
+# climate-state.json and ir-keymap.json).
 for state_file in \
   device-cache.json broadlink-codes.json hue-lamps.json hue-lamps-blacklist.json \
-  zigbee-lamps.json zigbee-lamps-blacklist.json climate-state.json nabaztag.json refresh-tokens.json
+  zigbee-lamps.json zigbee-lamps-blacklist.json climate-state.json nabaztag.json \
+  refresh-tokens.json ir-keymap.json
 do
-  if [ -e "${APP_DIR}/${state_file}" ]; then
-    chown "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/${state_file}"
-  fi
+  [ -e "${APP_DIR}/${state_file}" ] || touch "${APP_DIR}/${state_file}"
+  chown "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/${state_file}"
 done
 EOF
 }
