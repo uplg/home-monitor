@@ -28,6 +28,7 @@ struct ConfigRequest {
     mac: Option<String>,
     box_host: Option<String>,
     box_wake_app: Option<String>,
+    broadcast: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,6 +173,7 @@ async fn set_config(
             mac: blank_to_none(body.mac),
             box_host: blank_to_none(body.box_host),
             box_wake_app: blank_to_none(body.box_wake_app),
+            broadcast: blank_to_none(body.broadcast),
         })
         .await?;
     Ok(Json(SimpleResponse {

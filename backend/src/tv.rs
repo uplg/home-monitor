@@ -190,6 +190,10 @@ pub struct TvConfig {
     /// DIAL app woken on the box to trigger CEC One Touch Play.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub box_wake_app: Option<String>,
+    /// Directed broadcast address for Wake-on-LAN. Defaults to the set's /24
+    /// broadcast; set it explicitly on a network that is not a /24.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub broadcast: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -566,12 +570,38 @@ impl TvManager {
         socket.set_broadcast(true)?;
         let packet = magic_packet(&mac);
 
-        // Ports 9 and 7 are both used in the wild, and the directed broadcast
-        // reaches the set when the router filters the global one.
+        // Ports 9 and 7 are both used in the wild.
+        //
+        // The *directed* subnet broadcast is the one that matters, and it is
+        // easy to leave out: the limited broadcast (255.255.255.255) is never
+        // forwarded off the sender's own link, so it only works when sender
+        // and set share a segment. Here the Pi is on Ethernet and the TV on
+        // Wi-Fi — same /24, different media — and only the directed form
+        // crosses the bridge. Unicast is no help either: a deep-sleeping set
+        // does not answer ARP, so there is nothing to address the frame to.
         let mut targets: Vec<SocketAddr> = vec![
             SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), 9),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), 7),
         ];
+
+        let directed = config
+            .broadcast
+            .as_deref()
+            .and_then(|value| value.parse::<Ipv4Addr>().ok())
+            .or_else(|| match config.host.as_deref()?.parse::<IpAddr>().ok()? {
+                // Assume a /24, which is what home networks are; override with
+                // `broadcast` in tv.json for anything else.
+                IpAddr::V4(ip) => {
+                    let o = ip.octets();
+                    Some(Ipv4Addr::new(o[0], o[1], o[2], 255))
+                }
+                IpAddr::V6(_) => None,
+            });
+        if let Some(directed) = directed {
+            targets.push(SocketAddr::new(IpAddr::V4(directed), 9));
+            targets.push(SocketAddr::new(IpAddr::V4(directed), 7));
+        }
+
         if let Some(host) = config.host.as_deref().and_then(|h| h.parse::<IpAddr>().ok()) {
             targets.push(SocketAddr::new(host, 9));
             targets.push(SocketAddr::new(host, 7));
@@ -629,6 +659,27 @@ mod tests {
         assert_eq!(parse_mac("2c:d9:74:c2:d4"), None);
         assert_eq!(parse_mac("zz:d9:74:c2:d4:57"), None);
         assert_eq!(parse_mac(""), None);
+    }
+
+    /// The limited broadcast never leaves the sender's link, so the directed
+    /// one is what actually reaches a set on another medium. Deriving it from
+    /// the host is the default; `broadcast` overrides it off a /24.
+    #[test]
+    fn derives_the_directed_broadcast_from_the_host() {
+        let derive = |host: &str| -> Option<Ipv4Addr> {
+            match host.parse::<IpAddr>().ok()? {
+                IpAddr::V4(ip) => {
+                    let o = ip.octets();
+                    Some(Ipv4Addr::new(o[0], o[1], o[2], 255))
+                }
+                IpAddr::V6(_) => None,
+            }
+        };
+        assert_eq!(
+            derive("192.168.1.52"),
+            Some(Ipv4Addr::new(192, 168, 1, 255))
+        );
+        assert_eq!(derive("10.0.0.7"), Some(Ipv4Addr::new(10, 0, 0, 255)));
     }
 
     #[test]
@@ -706,6 +757,7 @@ mod tests {
                 mac: Some("2c:d9:74:c2:d4:57".to_string()),
                 box_host: Some("192.168.1.153".to_string()),
                 box_wake_app: None,
+                broadcast: None,
             })
             .await
             .expect("saved");
@@ -720,6 +772,7 @@ mod tests {
                 mac: Some("nope".to_string()),
                 box_host: None,
                 box_wake_app: None,
+                broadcast: None,
             })
             .await;
         assert!(rejected.is_err());
