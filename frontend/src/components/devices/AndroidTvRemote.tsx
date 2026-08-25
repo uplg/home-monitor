@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
+import { CONFIRM, FAILURE, haptic, TAP } from "@/lib/haptics";
 
 /** Apps worth a shortcut, keyed by the packages actually on the box. */
 const SHORTCUTS: Array<{ package: string; label: string }> = [
@@ -69,12 +70,14 @@ export function AndroidTvRemote() {
   }, [config]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["androidtv-status"] });
-  const fail = (error: unknown) =>
-    toast({
+  const fail = (error: unknown) => {
+    haptic(FAILURE);
+    return toast({
       title: t("common.error"),
       description: error instanceof Error ? error.message : String(error),
       variant: "destructive",
     });
+  };
 
   const keyMutation = useMutation({
     mutationFn: (key: AndroidKey) => androidTvApi.sendKey(key),
@@ -115,7 +118,12 @@ export function AndroidTvRemote() {
     onError: fail,
   });
 
-  const press = (key: AndroidKey) => () => keyMutation.mutate(key);
+  const press =
+    (key: AndroidKey, pattern = TAP) =>
+    () => {
+      haptic(pattern);
+      keyMutation.mutate(key);
+    };
   const reachable = status?.reachable ?? false;
   const shortcuts = config?.favouriteApps?.length ? config.favouriteApps : SHORTCUTS;
   const currentShortcut = shortcuts.find((app) => app.package === status?.currentApp);
@@ -257,7 +265,10 @@ export function AndroidTvRemote() {
             {/* Power row */}
             <div className="flex items-center justify-between">
               <RemoteKey
-                onClick={() => powerMutation.mutate(!status.awake)}
+                onClick={() => {
+                  haptic(CONFIRM);
+                  powerMutation.mutate(!status.awake);
+                }}
                 label={status.awake ? t("androidTv.sleep") : t("androidTv.wake")}
                 tone={status.awake ? "danger" : "accent"}
               >
@@ -306,7 +317,7 @@ export function AndroidTvRemote() {
                 type="button"
                 aria-label="OK"
                 disabled={!reachable}
-                onClick={press("ok")}
+                onClick={press("ok", CONFIRM)}
                 className="absolute left-1/2 top-1/2 flex h-[4.5rem] w-[4.5rem] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border/70 bg-card text-sm font-semibold tracking-wide shadow-sm transition hover:bg-muted active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 OK
@@ -355,7 +366,10 @@ export function AndroidTvRemote() {
                     size="sm"
                     className="rounded-full"
                     disabled={launchMutation.isPending}
-                    onClick={() => launchMutation.mutate(app.package)}
+                    onClick={() => {
+                      haptic(CONFIRM);
+                      launchMutation.mutate(app.package);
+                    }}
                   >
                     {launchMutation.isPending && launchMutation.variables === app.package ? (
                       <Loader2 className="mr-2 h-3 w-3 animate-spin" />

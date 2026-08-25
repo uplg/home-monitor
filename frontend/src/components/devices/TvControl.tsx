@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "@/hooks/use-toast";
+import { CONFIRM, FAILURE, haptic, TAP } from "@/lib/haptics";
 
 /**
  * TV shelf: power, volume, Ambilight and a small D-pad, driven by JointSPACE.
@@ -59,12 +60,14 @@ export function TvControl() {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["tv-status"] });
 
-  const fail = (error: unknown) =>
-    toast({
+  const fail = (error: unknown) => {
+    haptic(FAILURE);
+    return toast({
       title: t("common.error"),
       description: error instanceof Error ? error.message : String(error),
       variant: "destructive",
     });
+  };
 
   const powerMutation = useMutation({
     mutationFn: (state: "on" | "off" | "toggle") => tvApi.power(state),
@@ -205,7 +208,10 @@ export function TvControl() {
               <Button
                 variant={isOn ? "outline" : "default"}
                 size="sm"
-                onClick={() => powerMutation.mutate(isOn ? "off" : "on")}
+                onClick={() => {
+                  haptic(CONFIRM);
+                  powerMutation.mutate(isOn ? "off" : "on");
+                }}
                 disabled={powerMutation.isPending}
               >
                 {powerMutation.isPending ? (
@@ -264,7 +270,10 @@ export function TvControl() {
                     variant="ghost"
                     size="icon"
                     aria-label={volume.muted ? t("tv.unmute") : t("tv.mute")}
-                    onClick={() => volumeMutation.mutate({ muted: !volume.muted })}
+                    onClick={() => {
+                      haptic(CONFIRM);
+                      volumeMutation.mutate({ muted: !volume.muted });
+                    }}
                     disabled={volumeMutation.isPending}
                   >
                     {volume.muted ? (
@@ -279,7 +288,10 @@ export function TvControl() {
                     max={volume.max}
                     step={1}
                     onValueChange={([value]) => setVolumeDraft(value)}
-                    onValueCommit={([value]) => volumeMutation.mutate({ level: value })}
+                    onValueCommit={([value]) => {
+                      haptic(TAP);
+                      volumeMutation.mutate({ level: value });
+                    }}
                     className="flex-1"
                   />
                 </div>
@@ -298,7 +310,10 @@ export function TvControl() {
                         size="icon"
                         className={className}
                         aria-label={key}
-                        onClick={() => keyMutation.mutate(key)}
+                        onClick={() => {
+                          haptic(TAP);
+                          keyMutation.mutate(key);
+                        }}
                       >
                         <Icon className="h-4 w-4" />
                       </Button>
@@ -308,7 +323,10 @@ export function TvControl() {
                       size="icon"
                       className="col-start-2 row-start-2"
                       aria-label="confirm"
-                      onClick={() => keyMutation.mutate("confirm")}
+                      onClick={() => {
+                        haptic(CONFIRM);
+                        keyMutation.mutate("confirm");
+                      }}
                     >
                       OK
                     </Button>
@@ -319,7 +337,10 @@ export function TvControl() {
                         key={key}
                         variant="outline"
                         size="sm"
-                        onClick={() => keyMutation.mutate(key)}
+                        onClick={() => {
+                          haptic(TAP);
+                          keyMutation.mutate(key);
+                        }}
                       >
                         {key.replace(/_/g, " ")}
                       </Button>
