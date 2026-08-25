@@ -105,14 +105,16 @@ pub fn router() -> Router<AppState> {
         .route("/source/box", post(switch_to_box))
 }
 
-/// Routes the set to the box's HDMI input.
+/// Wakes the box and routes the set to its HDMI input.
 ///
-/// Prefers CEC over ADB (`onetouchplay`), which switches the input without
-/// disturbing whatever the box is doing. The DIAL fallback works by *launching
-/// an app* to wake the box, so it would yank the viewer out of what they were
-/// watching — it is only worth it when ADB is unavailable.
+/// Waking matters as much as the CEC: asserting One Touch Play against a
+/// sleeping box turns the television on to a black screen, which then powers
+/// itself back off for want of a signal. `wake()` does both, in that order.
+///
+/// The DIAL fallback works by *launching an app*, so it would yank the viewer
+/// out of what they were watching — it is only worth it when ADB is down.
 pub async fn route_to_box(state: &AppState) -> Result<(), AppError> {
-    match state.androidtv.one_touch_play().await {
+    match state.androidtv.wake().await {
         Ok(()) => Ok(()),
         Err(error) => {
             tracing::debug!(%error, "CEC route failed, falling back to DIAL");

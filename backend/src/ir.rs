@@ -45,6 +45,11 @@ const RECENT_EVENTS_CAP: usize = 50;
 /// reception). A deliberate human re-press comes later than this.
 const PRESS_DEBOUNCE: Duration = Duration::from_millis(1200);
 
+/// Navigation keys are pressed in quick, deliberate succession, so the
+/// phantom filter has to be short enough not to eat real presses. Bindings
+/// opt into it with `debounce_ms`.
+const MIN_PRESS_DEBOUNCE: Duration = Duration::from_millis(50);
+
 /// What a switch-like action does to the device: force a state, or flip
 /// whatever the current state is — the remote-control default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -172,6 +177,21 @@ pub struct IrBinding {
     /// like dim up/down. Presses (value == 1) always fire; releases never do.
     #[serde(default)]
     pub repeat: bool,
+    /// Phantom-double window for this key, in milliseconds. Defaults to
+    /// [`PRESS_DEBOUNCE`], which is right for toggles; navigation keys want
+    /// something far shorter so quick repeated presses get through.
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "debounceMs")]
+    pub debounce_ms: Option<u64>,
+}
+
+impl IrBinding {
+    /// Clamped so a zero or a typo cannot disable the phantom filter outright.
+    fn debounce(&self) -> Duration {
+        match self.debounce_ms {
+            Some(ms) => Duration::from_millis(ms).max(MIN_PRESS_DEBOUNCE),
+            None => PRESS_DEBOUNCE,
+        }
+    }
 }
 
 /// One received key event, kept for the configurator's capture flow.
@@ -220,11 +240,19 @@ impl IrManager {
     /// Returns `false` when this press is a phantom double (see
     /// [`PRESS_DEBOUNCE`]); an accepted press starts the next window.
     /// Autorepeat events are not debounced — they are the point of `repeat`.
+    ///
+    /// The window is per binding: 1.2 s suits a toggle, where a phantom
+    /// double cancels the action outright, but it would swallow the second
+    /// press of a D-pad being used to navigate.
     pub async fn accept_press(&self, code: u16) -> bool {
+        let window = match self.keymap.read().await.get(&code) {
+            Some(binding) => binding.debounce(),
+            None => PRESS_DEBOUNCE,
+        };
         let mut map = self.last_press.lock().await;
         let now = Instant::now();
         match map.get(&code) {
-            Some(previous) if now.duration_since(*previous) < PRESS_DEBOUNCE => false,
+            Some(previous) if now.duration_since(*previous) < window => false,
             _ => {
                 map.insert(code, now);
                 true
@@ -491,6 +519,35 @@ mod tests {
         );
     }
 
+    /// A short window is what makes the D-pad usable; the clamp is what
+    /// stops a typo from disabling the phantom filter that protects toggles.
+    #[test]
+    fn debounce_is_per_binding_and_clamped() {
+        let keymap = parse_keymap(
+            r#"{
+                "103": { "actions": [{ "action": "androidtv_key", "key": "up" }], "debounce_ms": 150 },
+                "104": { "actions": [{ "action": "androidtv_key", "key": "up" }], "debounce_ms": 0 },
+                "116": { "actions": [{ "action": "nabaztag", "command": "dance" }] }
+            }"#,
+        )
+        .expect("parses");
+
+        assert_eq!(
+            keymap.get(&103).expect("binding").debounce(),
+            Duration::from_millis(150)
+        );
+        // Zero is clamped, never honoured literally.
+        assert_eq!(
+            keymap.get(&104).expect("binding").debounce(),
+            MIN_PRESS_DEBOUNCE
+        );
+        // Toggles keep the long window that protects them.
+        assert_eq!(
+            keymap.get(&116).expect("binding").debounce(),
+            PRESS_DEBOUNCE
+        );
+    }
+
     #[tokio::test]
     async fn debounces_phantom_double_press_per_key() {
         let path = std::env::temp_dir()
@@ -523,6 +580,7 @@ mod tests {
                     }],
                     label: Some("OK".to_string()),
                     repeat: false,
+                    debounce_ms: None,
                 },
             )
             .await
