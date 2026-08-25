@@ -266,9 +266,11 @@ async fn switch_to_box(
     user: AuthenticatedUser,
 ) -> Result<Json<SimpleResponse>, AppError> {
     let _ = user.0;
-    state.tv.switch_to_box().await?;
+    // CEC first: the DIAL fallback inside `route_to_box` wakes the box by
+    // launching an app, which would interrupt whatever is playing.
+    route_to_box(&state).await?;
     Ok(Json(SimpleResponse {
         success: true,
-        message: "Box woken; the TV should switch to its HDMI input".to_string(),
+        message: "TV routed to the box's HDMI input".to_string(),
     }))
 }
