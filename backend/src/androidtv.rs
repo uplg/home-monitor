@@ -422,7 +422,12 @@ impl AndroidTvManager {
                     awake,
                     current_app: parse_resumed_package(&output),
                     model: model.filter(|value| !value.is_empty()),
-                    paired: self.remote.lock().await.is_some(),
+                    // Ask whether a session can be had, not whether one
+                    // happens to be cached: the cache is empty after every
+                    // restart and right after pairing, which made the badge
+                    // flash once and vanish. Opening it here also keeps the
+                    // session warm, so the first key press is already fast.
+                    paired: self.remote_session().await.is_some(),
                 }
             }
             Err(_) => AndroidTvStatus {
