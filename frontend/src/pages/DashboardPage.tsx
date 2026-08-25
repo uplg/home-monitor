@@ -304,10 +304,6 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      <TempoCard />
-
-      <NabaztagTile />
-
       <TvControl />
 
       <AndroidTvRemote />
@@ -583,6 +579,10 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </section>
+
+      <NabaztagTile />
+
+      <TempoCard />
     </div>
   );
 }
