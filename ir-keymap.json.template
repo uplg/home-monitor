@@ -49,5 +49,12 @@
     "actions": [
       { "action": "tv_key", "key": "play_pause" }
     ]
+  },
+  "108": {
+    "label": "Bas — D-pad du boîtier",
+    "actions": [
+      { "action": "androidtv_key", "key": "down" }
+    ],
+    "debounce_ms": 150
   }
 }

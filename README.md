@@ -71,6 +71,21 @@ with `switchToBox` instead nudges the Android box awake over DIAL, which makes
 it assert CEC One Touch Play — that both powers the set and routes it to the
 box's HDMI input. This is the fix for "the TV came up on the wrong input".
 
+## IR remote debounce
+
+Presses of the same key closer than 1.2 s are treated as phantom doubles:
+marginal IR reception splits one hold into several presses, which is fatal for
+toggles — the action cancels itself. That default is wrong for navigation,
+where the second press of a D-pad is deliberate and arrives well inside the
+window. Bindings therefore take an optional `debounce_ms`; the shipped keymap
+uses 150 ms for the D-pad, media and volume keys and leaves toggles (climate,
+plugs, lamps) on the 1.2 s default. The value is clamped at 50 ms so a typo
+cannot disable the filter for the bindings that depend on it.
+
+Worth knowing when a key feels slow: `input keyevent` starts a JVM on the box,
+which costs ~150 ms awake but around **10 s when the box is asleep** — the same
+delay the official `adb` binary shows, so it is the box, not this code.
+
 ## Android TV box
 
 The box runs plain Android 14 with network debugging enabled, so Maison talks
