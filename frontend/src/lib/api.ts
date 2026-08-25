@@ -1050,3 +1050,213 @@ export const nabaztagApi = {
       body: { forceRefresh },
     }),
 };
+
+export type TvPower = "on" | "standby" | "deep_standby";
+
+export type TvKey =
+  | "standby"
+  | "back"
+  | "home"
+  | "source"
+  | "watch_tv"
+  | "confirm"
+  | "cursor_up"
+  | "cursor_down"
+  | "cursor_left"
+  | "cursor_right"
+  | "volume_up"
+  | "volume_down"
+  | "mute"
+  | "channel_step_up"
+  | "channel_step_down"
+  | "play_pause"
+  | "pause"
+  | "stop"
+  | "fast_forward"
+  | "rewind"
+  | "next"
+  | "previous"
+  | "info"
+  | "options"
+  | "subtitle"
+  | "teletext"
+  | "ambilight_on_off";
+
+export interface TvConfig {
+  host?: string | null;
+  mac?: string | null;
+  boxHost?: string | null;
+  boxWakeApp?: string | null;
+}
+
+export interface TvVolume {
+  current: number;
+  min: number;
+  max: number;
+  muted: boolean;
+}
+
+export interface TvAmbilight {
+  power: boolean;
+  mode?: string;
+  style?: string;
+  setting?: string;
+}
+
+export interface TvStatus {
+  configured: boolean;
+  power: TvPower;
+  name?: string;
+  volume?: TvVolume;
+  ambilight?: TvAmbilight;
+}
+
+export interface TvStatusResponse {
+  success: boolean;
+  config: TvConfig;
+  status: TvStatus;
+}
+
+export interface TvPowerResponse {
+  success: boolean;
+  power: TvPower;
+}
+
+export interface TvVolumeResponse {
+  success: boolean;
+  volume: TvVolume;
+}
+
+export interface TvAmbilightResponse {
+  success: boolean;
+  ambilight: TvAmbilight;
+}
+
+export interface TvSimpleResponse {
+  success: boolean;
+  message: string;
+}
+
+export const tvApi = {
+  status: () => api<TvStatusResponse>("/tv"),
+
+  setConfig: (config: TvConfig) =>
+    api<TvSimpleResponse>("/tv/config", { method: "PUT", body: config }),
+
+  power: (state: "on" | "off" | "toggle", switchToBox = true) =>
+    api<TvPowerResponse>("/tv/power", { method: "POST", body: { state, switchToBox } }),
+
+  sendKey: (key: TvKey) => api<TvSimpleResponse>("/tv/key", { method: "POST", body: { key } }),
+
+  setVolume: (level?: number, muted?: boolean) =>
+    api<TvVolumeResponse>("/tv/volume", { method: "PUT", body: { level, muted } }),
+
+  ambilight: (state: "on" | "off" | "toggle") =>
+    api<TvAmbilightResponse>("/tv/ambilight", { method: "POST", body: { state } }),
+
+  switchToBox: () => api<TvSimpleResponse>("/tv/source/box", { method: "POST" }),
+};
+
+export type AndroidKey =
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "ok"
+  | "back"
+  | "home"
+  | "menu"
+  | "search"
+  | "volume_up"
+  | "volume_down"
+  | "mute"
+  | "play_pause"
+  | "play"
+  | "pause"
+  | "stop"
+  | "next"
+  | "previous"
+  | "rewind"
+  | "fast_forward"
+  | "channel_up"
+  | "channel_down"
+  | "power"
+  | "sleep"
+  | "wakeup";
+
+export interface AndroidApp {
+  package: string;
+  label: string;
+}
+
+export interface AndroidTvConfig {
+  host?: string | null;
+  port?: number | null;
+  favouriteApps?: AndroidApp[];
+}
+
+export interface AndroidTvStatus {
+  configured: boolean;
+  reachable: boolean;
+  awake: boolean;
+  currentApp?: string;
+  model?: string;
+}
+
+export interface AndroidTvStatusResponse {
+  success: boolean;
+  config: AndroidTvConfig;
+  status: AndroidTvStatus;
+}
+
+export interface AndroidTvSimpleResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface AndroidTvAppsResponse {
+  success: boolean;
+  packages: string[];
+}
+
+export const androidTvApi = {
+  status: () => api<AndroidTvStatusResponse>("/androidtv"),
+
+  setConfig: (config: AndroidTvConfig) =>
+    api<AndroidTvSimpleResponse>("/androidtv/config", { method: "PUT", body: config }),
+
+  sendKey: (key: AndroidKey) =>
+    api<AndroidTvSimpleResponse>("/androidtv/key", { method: "POST", body: { key } }),
+
+  launch: (pkg: string, ensureTvOn = true) =>
+    api<AndroidTvSimpleResponse>("/androidtv/launch", {
+      method: "POST",
+      body: { package: pkg, ensureTvOn },
+    }),
+
+  apps: () => api<AndroidTvAppsResponse>("/androidtv/apps"),
+
+  wake: () => api<AndroidTvSimpleResponse>("/androidtv/wake", { method: "POST" }),
+
+  sleep: () => api<AndroidTvSimpleResponse>("/androidtv/sleep", { method: "POST" }),
+
+  /**
+   * Sideloads an APK onto the box. Goes through `fetch` directly rather than
+   * `api()`: the body is multipart, so the JSON content type must not be set
+   * (the browser has to add its own boundary).
+   */
+  installApk: async (file: File): Promise<AndroidTvSimpleResponse> => {
+    const form = new FormData();
+    form.append("apk", file);
+    const response = await fetch("/api/androidtv/apk", {
+      method: "POST",
+      body: form,
+      credentials: "same-origin",
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || `Install failed (${response.status})`);
+    }
+    return data as AndroidTvSimpleResponse;
+  },
+};

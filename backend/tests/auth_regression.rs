@@ -101,6 +101,9 @@ async fn auth_successful_login_returns_ok_and_sets_cookies() {
         nabaztag_host: None,
         zigbee_permit_join_seconds: 120,
         ir_keymap_path: source_root.join("ir-keymap.json"),
+        tv_config_path: source_root.join("tv.json"),
+        androidtv_config_path: source_root.join("androidtv.json"),
+        adb_key_path: source_root.join("adb-key"),
         ir_api_token: Some("test-ir-token".to_string()),
         source_root,
     };
@@ -209,6 +212,9 @@ fn test_config() -> Config {
         nabaztag_host: None,
         zigbee_permit_join_seconds: 120,
         ir_keymap_path: source_root.join("ir-keymap.json"),
+        tv_config_path: source_root.join("tv.json"),
+        androidtv_config_path: source_root.join("androidtv.json"),
+        adb_key_path: source_root.join("adb-key"),
         ir_api_token: Some("test-ir-token".to_string()),
         source_root,
     }

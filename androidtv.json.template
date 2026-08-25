@@ -1,0 +1,14 @@
+{
+  "host": "192.168.1.153",
+  "port": 5555,
+  "favouriteApps": [
+    {
+      "package": "org.smarttube.beta",
+      "label": "SmartTube"
+    },
+    {
+      "package": "studio.kahn.iris.tv",
+      "label": "Iris"
+    }
+  ]
+}

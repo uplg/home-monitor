@@ -1,3 +1,4 @@
+pub mod androidtv;
 pub mod auth;
 pub mod broadlink;
 pub mod devices;
@@ -7,4 +8,5 @@ pub mod meross;
 pub mod nabaztag;
 pub mod root;
 pub mod tempo;
+pub mod tv;
 pub mod zigbee;

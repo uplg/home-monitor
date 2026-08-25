@@ -13,7 +13,7 @@ live-runtime-tests = []
 [dependencies]
 argon2 = "0.5.3"
 async-trait = "0.1.92"
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["multipart"] }
 axum-extra = { version = "0.12.6", features = ["cookie"] }
 base64 = "0.23.1"
 btleplug = { version = "0.12.0", optional = true }
@@ -34,6 +34,12 @@ jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust
 md5 = "0.8.1"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls", "form"] }
 rbroadlink = "0.4.2"
+# ADB (Android TV box): the device authenticates the client by having it sign
+# a 20-byte token with RSA-2048, so a pure-Rust RSA is needed to speak the
+# protocol without shipping the adb binary to the Pi.
+rsa = "0.9.10"
+sha1 = { version = "0.10.6", features = ["oid"] }
+rand = "0.8.5"
 rust-async-tuyapi = { git = "https://github.com/uplg/rust-async-tuyapi", rev = "6cd9180b296a04ef9e6751b594c6235aa79b7157" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

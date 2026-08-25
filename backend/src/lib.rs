@@ -1,3 +1,5 @@
+pub mod adb;
+pub mod androidtv;
 pub mod auth;
 pub mod broadlink;
 pub mod config;
@@ -14,6 +16,7 @@ pub mod nabaztag;
 pub mod routes;
 pub mod tempo;
 pub mod tuya;
+pub mod tv;
 pub mod zigbee;
 pub mod zigbee_native;
 
@@ -38,6 +41,8 @@ use tower_http::services::{ServeDir, ServeFile};
 use routes::auth::{load_users, SharedUsers};
 use meross::MerossManager;
 use tuya::TuyaManager;
+use tv::TvManager;
+use androidtv::AndroidTvManager;
 use tower_http::trace::TraceLayer;
 use zigbee::ZigbeeManager;
 
@@ -54,6 +59,8 @@ pub struct AppState {
     pub(crate) nabaztag: NabaztagManager,
     pub(crate) tempo: TempoService,
     pub(crate) tuya: TuyaManager,
+    pub(crate) tv: TvManager,
+    pub(crate) androidtv: AndroidTvManager,
     pub(crate) zigbee: ZigbeeManager,
 }
 
@@ -87,6 +94,9 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
     )?;
     let tempo = TempoService::new(config.source_root.clone())?;
     let tuya = TuyaManager::new(&config.devices_path, &config.device_cache_path)?;
+    let tv = TvManager::new(&config.tv_config_path)?;
+    let androidtv =
+        AndroidTvManager::new(&config.androidtv_config_path, &config.adb_key_path)?;
     let zigbee = ZigbeeManager::new(config.as_ref())?;
 
     let state = AppState {
@@ -101,6 +111,8 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
         nabaztag,
         tempo,
         tuya,
+        tv,
+        androidtv,
         zigbee,
     };
 
@@ -169,6 +181,8 @@ pub fn build_app(state: AppState) -> Router {
         .nest("/meross", routes::meross::router())
         .nest("/nabaztag", routes::nabaztag::router())
         .nest("/tempo", routes::tempo::router())
+        .nest("/tv", routes::tv::router())
+        .nest("/androidtv", routes::androidtv::router())
         .nest("/zigbee", routes::zigbee::router());
 
     let app = Router::<AppState>::new()

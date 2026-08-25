@@ -381,6 +381,9 @@ fn test_config() -> Config {
         zigbee_lamps_blacklist_path: source_root.join("zigbee-lamps-blacklist.json"),
         zigbee_permit_join_seconds: 120,
         ir_keymap_path: source_root.join("ir-keymap.json"),
+        tv_config_path: source_root.join("tv.json"),
+        androidtv_config_path: source_root.join("androidtv.json"),
+        adb_key_path: source_root.join("adb-key"),
         ir_api_token: Some("test-ir-token".to_string()),
         source_root,
     }

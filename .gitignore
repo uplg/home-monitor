@@ -45,3 +45,6 @@ mosquitto/certs/
 # screenshot tool profile
 scripts/.shot-profile/
 ir-keymap.json
+tv.json
+androidtv.json
+adb-key

@@ -27,6 +27,9 @@ pub struct Config {
     pub nabaztag_host: Option<String>,
     pub zigbee_permit_join_seconds: u16,
     pub ir_keymap_path: PathBuf,
+    pub tv_config_path: PathBuf,
+    pub androidtv_config_path: PathBuf,
+    pub adb_key_path: PathBuf,
     pub ir_api_token: Option<String>,
 }
 
@@ -91,6 +94,19 @@ impl Config {
         let ir_keymap_path = env::var("IR_KEYMAP_JSON_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| source_root.join("ir-keymap.json"));
+
+        let tv_config_path = env::var("TV_JSON_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| source_root.join("tv.json"));
+
+        let androidtv_config_path = env::var("ANDROIDTV_JSON_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| source_root.join("androidtv.json"));
+
+        // Private key authenticating this host to the box's adbd.
+        let adb_key_path = env::var("ADB_KEY_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| source_root.join("adb-key"));
 
         // Machine token for the STB IR bridge (kird); empty/unset = IR API off.
         let ir_api_token = env::var("IR_API_TOKEN").ok().and_then(|value| {
@@ -180,6 +196,9 @@ impl Config {
             nabaztag_host,
             zigbee_permit_join_seconds,
             ir_keymap_path,
+            tv_config_path,
+            androidtv_config_path,
+            adb_key_path,
             ir_api_token,
         }
     }
@@ -211,6 +230,9 @@ impl Config {
             nabaztag_host: None,
             zigbee_permit_join_seconds: 120,
             ir_keymap_path: source_root.join("ir-keymap.json"),
+            tv_config_path: source_root.join("tv.json"),
+            androidtv_config_path: source_root.join("androidtv.json"),
+            adb_key_path: source_root.join("adb-key"),
             ir_api_token: Some("test-ir-token".to_string()),
             source_root,
         }

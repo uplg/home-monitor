@@ -80,6 +80,43 @@ pub enum IrAction {
         #[serde(default)]
         state: SwitchState,
     },
+    /// Powers the Philips TV through JointSPACE. `switch_to_box` also routes
+    /// the set to the Android box's HDMI input on power-on, since the TV
+    /// otherwise comes back on whatever source it was last left on.
+    TvPower {
+        #[serde(default)]
+        state: SwitchState,
+        /// Aliased: `rename_all` on the enum renames variants, not fields, so
+        /// a camelCase key would otherwise be dropped without a word.
+        #[serde(default = "default_true", alias = "switchToBox")]
+        switch_to_box: bool,
+    },
+    /// Sends one remote-control key to the TV.
+    TvKey {
+        key: crate::tv::TvKey,
+    },
+    /// Absolute volume on the TV, preferred over repeated volume keys.
+    TvVolume {
+        level: u8,
+    },
+    TvAmbilight {
+        #[serde(default)]
+        state: SwitchState,
+    },
+    /// Launches an app on the Android TV box, powering the television on and
+    /// routing it to the box first — a remote button that lights up a dark
+    /// room's screen is the whole point.
+    #[serde(rename = "androidtv_app")]
+    AndroidTvApp {
+        package: String,
+        #[serde(default = "default_true", alias = "ensureTvOn")]
+        ensure_tv_on: bool,
+    },
+    /// Sends one key to the Android TV box (D-pad, media, volume).
+    #[serde(rename = "androidtv_key")]
+    AndroidTvKey {
+        key: crate::androidtv::AndroidKey,
+    },
     /// Toggles the Mitsubishi AC through the Broadlink blaster: if the last
     /// commanded state left it on, sends `state-off`; otherwise sends
     /// `on_command` (a structured `state-…` command, e.g.
@@ -94,9 +131,24 @@ pub enum IrAction {
     },
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Config-time validation so a typo'd binding fails at save, not at keypress.
 pub fn validate_actions(actions: &[IrAction]) -> Result<(), String> {
     for action in actions {
+        if let IrAction::AndroidTvApp { package, .. } = action {
+            let valid = !package.is_empty()
+                && package
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_');
+            if !valid {
+                return Err(format!(
+                    "invalid Android package {package:?} (expected e.g. org.smarttube.beta)"
+                ));
+            }
+        }
         if let IrAction::ClimateToggle { on_command, .. } = action {
             if crate::mitsubishi_ir::parse_climate_settings(on_command).is_none() {
                 return Err(format!(
@@ -243,7 +295,7 @@ impl IrManager {
     }
 }
 
-fn parse_keymap(content: &str) -> Result<HashMap<u16, IrBinding>, String> {
+pub fn parse_keymap(content: &str) -> Result<HashMap<u16, IrBinding>, String> {
     let raw: HashMap<String, IrBinding> =
         serde_json::from_str(content.trim()).map_err(|error| error.to_string())?;
     raw.into_iter()
@@ -337,6 +389,98 @@ mod tests {
             model: None,
         }];
         assert!(validate_actions(&garbage).is_err(), "temp out of range");
+    }
+
+    /// The TV bindings are the ones a user hand-writes most often, so pin
+    /// their JSON shape — including the camelCase `switchToBox` and the
+    /// snake_case key names.
+    #[test]
+    fn parses_tv_actions() {
+        let keymap = parse_keymap(
+            r#"{
+                "9": { "actions": [
+                    { "action": "tv_power", "state": "toggle", "switchToBox": true },
+                    { "action": "tv_key", "key": "play_pause" },
+                    { "action": "tv_volume", "level": 22 },
+                    { "action": "tv_ambilight", "state": "off" }
+                ] }
+            }"#,
+        )
+        .expect("TV actions should parse");
+
+        let actions = &keymap.get(&9).expect("binding 9").actions;
+        assert_eq!(
+            actions[0],
+            IrAction::TvPower {
+                state: SwitchState::Toggle,
+                switch_to_box: true,
+            }
+        );
+        assert_eq!(
+            actions[1],
+            IrAction::TvKey {
+                key: crate::tv::TvKey::PlayPause,
+            }
+        );
+        assert_eq!(actions[2], IrAction::TvVolume { level: 22 });
+        assert_eq!(
+            actions[3],
+            IrAction::TvAmbilight {
+                state: SwitchState::Off,
+            }
+        );
+    }
+
+    /// Switching to the box input is the sane default: the set otherwise
+    /// wakes on whatever source it was last left on.
+    #[test]
+    fn tv_power_defaults_to_switching_to_the_box() {
+        let keymap =
+            parse_keymap(r#"{ "9": { "actions": [{ "action": "tv_power" }] } }"#).expect("parses");
+        assert_eq!(
+            keymap.get(&9).expect("binding").actions[0],
+            IrAction::TvPower {
+                state: SwitchState::Toggle,
+                switch_to_box: true,
+            }
+        );
+    }
+
+    /// `rename_all = "snake_case"` on an enum renames *variants*, not the
+    /// fields inside them, so a camelCase key is dropped silently unless it is
+    /// aliased. Both spellings must reach the field — asserted with the
+    /// NON-default value, or the test would pass on the default alone.
+    #[test]
+    fn both_field_spellings_are_honoured() {
+        for body in [
+            r#"{ "9": { "actions": [{ "action": "tv_power", "switchToBox": false }] } }"#,
+            r#"{ "9": { "actions": [{ "action": "tv_power", "switch_to_box": false }] } }"#,
+        ] {
+            let keymap = parse_keymap(body).expect("parses");
+            assert_eq!(
+                keymap.get(&9).expect("binding").actions[0],
+                IrAction::TvPower {
+                    state: SwitchState::Toggle,
+                    switch_to_box: false,
+                },
+                "spelling was ignored in {body}"
+            );
+        }
+
+        for body in [
+            r#"{ "9": { "actions": [{ "action": "androidtv_app", "package": "a.b", "ensureTvOn": false }] } }"#,
+            r#"{ "9": { "actions": [{ "action": "androidtv_app", "package": "a.b", "ensure_tv_on": false }] } }"#,
+        ] {
+            let keymap = parse_keymap(body).expect("parses");
+            assert_eq!(
+                keymap.get(&9).expect("binding").actions[0],
+                IrAction::AndroidTvApp {
+                    package: "a.b".to_string(),
+                    ensure_tv_on: false,
+                },
+                "spelling was ignored in {body}"
+            );
+        }
     }
 
     #[test]

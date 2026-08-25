@@ -25,5 +25,29 @@
       { "action": "broadlink_code", "host": "192.168.1.2", "code_id": "tv-power" },
       { "action": "meross_power", "device": "192.168.1.131" }
     ]
+  },
+  "9": {
+    "label": "9 — TV on/off (bascule + entrée HDMI du boîtier)",
+    "actions": [
+      { "action": "tv_power", "state": "toggle", "switch_to_box": true }
+    ]
+  },
+  "10": {
+    "label": "0 — Ambilight on/off",
+    "actions": [
+      { "action": "tv_ambilight", "state": "toggle" }
+    ]
+  },
+  "103": {
+    "label": "Haut — volume TV confortable",
+    "actions": [
+      { "action": "tv_volume", "level": 22 }
+    ]
+  },
+  "105": {
+    "label": "Gauche — pause/lecture TV",
+    "actions": [
+      { "action": "tv_key", "key": "play_pause" }
+    ]
   }
 }

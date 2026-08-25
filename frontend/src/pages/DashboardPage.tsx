@@ -13,6 +13,8 @@ import { BroadlinkClimateControl } from "@/components/devices/BroadlinkClimateCo
 import { MerossPlugCard } from "@/components/devices/MerossPlugControl";
 import { TempoCard } from "@/components/devices/TempoCard";
 import { NabaztagTile } from "@/components/devices/NabaztagTile";
+import { TvControl } from "@/components/devices/TvControl";
+import { AndroidTvRemote } from "@/components/devices/AndroidTvRemote";
 // Nabaztag is disabled while the physical device is being repaired.
 // import { NabaztagCard } from "@/components/devices/NabaztagControl";
 import { DashboardSectionHeader } from "@/components/dashboard/DashboardSectionHeader";
@@ -305,6 +307,10 @@ export function DashboardPage() {
       <TempoCard />
 
       <NabaztagTile />
+
+      <TvControl />
+
+      <AndroidTvRemote />
 
       {!isHueDisabled && (
         <section className="space-y-4">

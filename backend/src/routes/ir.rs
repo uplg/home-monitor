@@ -182,6 +182,53 @@ async fn execute(state: &AppState, action: &IrAction) -> Result<String, AppError
             state.meross.toggle(device, on).await?;
             Ok(format!("Meross {device}: {}", if on { "on" } else { "off" }))
         }
+        IrAction::TvPower {
+            state: switch,
+            switch_to_box,
+        } => {
+            let power = match switch {
+                SwitchState::On => state.tv.power_on(*switch_to_box).await?,
+                SwitchState::Off => state.tv.power_off().await?,
+                SwitchState::Toggle => match state.tv.power().await {
+                    crate::tv::TvPower::On => state.tv.power_off().await?,
+                    _ => state.tv.power_on(*switch_to_box).await?,
+                },
+            };
+            Ok(format!("TV: {power:?}"))
+        }
+        IrAction::TvKey { key } => {
+            state.tv.send_key(*key).await?;
+            Ok(format!("TV key: {key:?}"))
+        }
+        IrAction::TvVolume { level } => {
+            let volume = state.tv.set_volume(*level, None).await?;
+            Ok(format!("TV volume: {}", volume.current))
+        }
+        IrAction::TvAmbilight { state: switch } => {
+            let on = match switch {
+                SwitchState::On => true,
+                SwitchState::Off => false,
+                SwitchState::Toggle => !state.tv.ambilight().await?.power,
+            };
+            state.tv.set_ambilight_power(on).await?;
+            Ok(format!("TV Ambilight: {}", if on { "on" } else { "off" }))
+        }
+        IrAction::AndroidTvApp {
+            package,
+            ensure_tv_on,
+        } => {
+            if *ensure_tv_on {
+                if let Err(error) = crate::routes::tv::ensure_on(state).await {
+                    tracing::debug!(%error, "could not power the TV on before launching");
+                }
+            }
+            state.androidtv.launch_app(package).await?;
+            Ok(format!("Android TV: launched {package}"))
+        }
+        IrAction::AndroidTvKey { key } => {
+            state.androidtv.send_key(*key).await?;
+            Ok(format!("Android TV key: {key:?}"))
+        }
         IrAction::ClimateToggle {
             host,
             on_command,

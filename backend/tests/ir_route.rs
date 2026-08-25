@@ -54,6 +54,9 @@ fn test_config(keymap_path: std::path::PathBuf) -> Config {
         nabaztag_host: None,
         zigbee_permit_join_seconds: 120,
         ir_keymap_path: keymap_path,
+        tv_config_path: temp_root.join("tv.json"),
+        androidtv_config_path: temp_root.join("androidtv.json"),
+        adb_key_path: temp_root.join("adb-key"),
         ir_api_token: Some(TEST_TOKEN.to_string()),
         source_root,
     }

@@ -10,6 +10,8 @@
 - Query Tempo data, predictions, history, and calibration helpers.
 - Mirror the daily Tempo colors on a Nabaztag running the garenne firmware (belly LED = today, ears = tomorrow).
 - Turn a set-top-box remote control into a house remote: an AirTies AIR 7310T (custom firmware) decodes its Ruwido IR remote and forwards every key press to maison, which maps buttons to actions. See "IR remote" below.
+- Drive the living-room Philips TV (55PUS6753, Saphi) over its JointSPACE API: power, volume, Ambilight and remote keys, plus Wake-on-LAN for deep standby. See "Television" below.
+- Drive the Android TV box (MECOOL LEAP-S1) from a proper on-screen remote — D-pad, media, volume, app shortcuts and APK sideloading — over a native ADB client. See "Android TV box" below.
 - Keep access private with local authentication and secure session cookies.
 
 ![Maison](/screenshots/maison.jpg?v=1786751396)
@@ -33,11 +35,70 @@ The Rust backend reads these files directly from the repo root:
 - `zigbee-lamps-blacklist.json`
 - `climate-state.json`
 - `ir-keymap.json`
+- `tv.json`
+- `androidtv.json`
+- `adb-key`
 - `mosquitto/`
 
 Tempo cache and calibration files now live in `cache/tempo/`.
 
 Tempo recalibration workflow is documented in `docs/tempo-calibration.md`.
+
+## Television
+
+The 55PUS6753 runs Saphi, not Android TV, which is what makes it controllable
+at all: the JointSPACE API answers plain HTTP on port 1925 with
+`pairing_type: "none"` — no pairing, no auth, no certificate. Copy
+`tv.json.template` to `tv.json` and fill in the set's address, its MAC (for
+Wake-on-LAN) and, optionally, the Android box address.
+
+Two things are worth knowing before poking at it:
+
+- **The endpoint whitelist is not advisory.** Saphi answers `Forbidden` or
+  `Not Found` on what it does not implement (`/6/sources`, `/6/applications`,
+  `/6/activities/*`, anything under `/5/`), and hitting those repeatedly kills
+  the embedded server *persistently* — neither a standby cycle nor the API's
+  own `Standby` brings it back, only unplugging the set from the mains for
+  ~30 s. `tv.rs` therefore models the reachable surface as an enum and spaces
+  every request through a single gate. Do not widen it without verifying.
+- **There are two sleep depths.** Light standby still answers on 1925
+  (`powerstate: "Standby"`); deep standby drops the network stack entirely and
+  needs a Wake-on-LAN magic packet first, which takes ~20 s and only revives
+  the network — the panel stays off until the following `powerstate: On`.
+
+Source switching is the one thing JointSPACE cannot do on Saphi. Powering on
+with `switchToBox` instead nudges the Android box awake over DIAL, which makes
+it assert CEC One Touch Play — that both powers the set and routes it to the
+box's HDMI input. This is the fix for "the TV came up on the wrong input".
+
+## Android TV box
+
+The box runs plain Android 14 with network debugging enabled, so Maison talks
+to it over **ADB, implemented natively in `adb.rs`** — no `adb` binary is
+shipped to the Pi. The existing Rust crates all drive the local `adb` *server*
+(a second daemon on :5037), which is exactly the dependency worth avoiding on
+an ARMv6 Alpine box.
+
+Authentication is the part worth knowing about. On connect the box sends a
+20-byte token; the client signs it with RSA-2048 and answers. **The token is
+already a SHA-1 digest, so it must be signed pre-hashed** — hashing it again
+yields a signature the box silently rejects, after which every connection
+falls back to re-sending the public key and re-prompting on screen.
+
+The signing key is generated on first use and stored in `adb-key` (0600).
+Generating 2048 bits takes tens of seconds on a Pi 1, so it happens off the
+async runtime, and the television will show one "Allow USB debugging?" prompt
+the first time the backend connects. Accept it once — with *always allow* — and
+it never comes back.
+
+Beyond the remote, the box is also how the television gets powered and routed:
+it runs with `power_control_mode=broadcast` and `tv_wake_on_one_touch_play=1`,
+so waking it asserts CEC One Touch Play (TV on, input switched) and sleeping it
+broadcasts a CEC standby.
+
+APKs can be sideloaded from the dashboard: the file goes over ADB's `sync:`
+service to the box's temp directory, then through `pm install -r`. Uploads are
+capped at 96 MB — the Pi has 512 MB and holds the payload in memory.
 
 ## IR remote (AirTies STB)
 
