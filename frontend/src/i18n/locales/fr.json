@@ -686,6 +686,7 @@
     "paired": "Pairé",
     "pairHint": "Le pairage active le protocole Remote v2 : les touches ne passent plus par ADB et deviennent quasi instantanées.",
     "pairStarted": "Saisis les six caractères affichés sur la TV",
-    "pairedOk": "Pairé — les touches passent par le canal rapide"
+    "pairedOk": "Pairé — les touches passent par le canal rapide",
+    "pairedHint": "Les touches passent par Remote v2 (~8 ms) au lieu d'ADB (~150 ms)"
   }
 }

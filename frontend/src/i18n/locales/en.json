@@ -686,6 +686,7 @@
     "paired": "Paired",
     "pairHint": "Pairing uses the Remote v2 protocol: keys stop going through ADB and become near-instant.",
     "pairStarted": "Enter the six characters shown on the TV",
-    "pairedOk": "Paired — keys are now on the fast channel"
+    "pairedOk": "Paired — keys are now on the fast channel",
+    "pairedHint": "Keys go over Remote v2 (~8 ms) instead of ADB (~150 ms)"
   }
 }

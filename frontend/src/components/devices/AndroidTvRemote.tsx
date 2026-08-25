@@ -210,6 +210,18 @@ export function AndroidTvRemote() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Which channel the keys take. Worth surfacing: it is the
+              difference between 8 ms and 150 ms per press. */}
+          {!isLoading && status?.paired ? (
+            <Badge
+              variant="outline"
+              className="gap-1 border-primary/40 text-primary"
+              title={t("androidTv.pairedHint")}
+            >
+              <Zap className="h-3 w-3" />
+              {t("androidTv.paired")}
+            </Badge>
+          ) : null}
           {!isLoading && status?.configured ? (
             <Badge variant={reachable ? "default" : "secondary"}>
               {!reachable
