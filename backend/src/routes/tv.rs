@@ -105,6 +105,35 @@ pub fn router() -> Router<AppState> {
         .route("/source/box", post(switch_to_box))
 }
 
+/// Routes the set to the box's HDMI input.
+///
+/// Prefers CEC over ADB (`onetouchplay`), which switches the input without
+/// disturbing whatever the box is doing. The DIAL fallback works by *launching
+/// an app* to wake the box, so it would yank the viewer out of what they were
+/// watching — it is only worth it when ADB is unavailable.
+pub async fn route_to_box(state: &AppState) -> Result<(), AppError> {
+    match state.androidtv.one_touch_play().await {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            tracing::debug!(%error, "CEC route failed, falling back to DIAL");
+            state.tv.switch_to_box().await
+        }
+    }
+}
+
+/// Powers the set on, then optionally routes it to the box. The two are
+/// separate steps so the input switch can go through CEC rather than the
+/// app-launching DIAL path.
+async fn power_on_and_route(state: &AppState, switch: bool) -> Result<TvPower, AppError> {
+    let power = state.tv.power_on(false).await?;
+    if switch {
+        if let Err(error) = route_to_box(state).await {
+            tracing::debug!(%error, "could not route the TV to the box");
+        }
+    }
+    Ok(power)
+}
+
 /// Powers the set on and routes it to the box unless it is already on.
 /// Shared with the Android TV routes, where launching an app on a dark screen
 /// is never what the caller meant.
@@ -112,7 +141,7 @@ pub async fn ensure_on(state: &AppState) -> Result<(), AppError> {
     if state.tv.power().await == TvPower::On {
         return Ok(());
     }
-    state.tv.power_on(true).await.map(|_| ())
+    power_on_and_route(state, true).await.map(|_| ())
 }
 
 async fn status(
@@ -156,11 +185,11 @@ async fn power(
 ) -> Result<Json<PowerResponse>, AppError> {
     let _ = user.0;
     let power = match body.state {
-        SwitchState::On => state.tv.power_on(body.switch_to_box).await?,
+        SwitchState::On => power_on_and_route(&state, body.switch_to_box).await?,
         SwitchState::Off => state.tv.power_off().await?,
         SwitchState::Toggle => match state.tv.power().await {
             TvPower::On => state.tv.power_off().await?,
-            _ => state.tv.power_on(body.switch_to_box).await?,
+            _ => power_on_and_route(&state, body.switch_to_box).await?,
         },
     };
     Ok(Json(PowerResponse {
