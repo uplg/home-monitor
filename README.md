@@ -11,7 +11,7 @@
 - Mirror the daily Tempo colors on a Nabaztag running the garenne firmware (belly LED = today, ears = tomorrow).
 - Turn a set-top-box remote control into a house remote: an AirTies AIR 7310T (custom firmware) decodes its Ruwido IR remote and forwards every key press to maison, which maps buttons to actions. See "IR remote" below.
 - Drive the living-room Philips TV (55PUS6753, Saphi) over its JointSPACE API: power, volume, Ambilight and remote keys, plus Wake-on-LAN for deep standby. See "Television" below.
-- Drive the Android TV box (MECOOL LEAP-S1) from a proper on-screen remote — D-pad, media, volume, app shortcuts and APK sideloading — over a native ADB client. See "Android TV box" below.
+- Drive the Android TV box (MECOOL LEAP-S1) from a proper on-screen remote — D-pad, media, volume, app shortcuts and APK sideloading — over two native clients: the Remote v2 protocol a physical remote speaks (fast, needs pairing) with ADB as the fallback and for what Remote v2 cannot do. See "Android TV box" below.
 - Keep access private with local authentication and secure session cookies.
 
 ![Maison](/screenshots/maison.jpg?v=1787692439)
@@ -38,6 +38,7 @@ The Rust backend reads these files directly from the repo root:
 - `tv.json`
 - `androidtv.json`
 - `adb-key`
+- `atv-identity`
 - `mosquitto/`
 
 Tempo cache and calibration files now live in `cache/tempo/`.
@@ -114,7 +115,7 @@ buttons on a physical remote.
 **ADB** keeps everything with no equivalent in Remote v2: CEC (hence the TV's
 input), detailed box state, and sideloading an APK.
 
-## Android TV box (ADB details)
+### The ADB channel
 
 The box runs plain Android 14 with network debugging enabled, so Maison talks
 to it over **ADB, implemented natively in `adb.rs`** — no `adb` binary is
