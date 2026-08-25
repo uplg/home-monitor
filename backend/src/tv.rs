@@ -55,6 +55,10 @@ const MIN_REQUEST_GAP: Duration = Duration::from_millis(900);
 /// Deep standby took ~20 s to answer again in practice; leave generous margin.
 const WAKE_TIMEOUT: Duration = Duration::from_secs(45);
 const WAKE_POLL_GAP: Duration = Duration::from_secs(3);
+/// How long to let the set catch up with a power-on before reporting back.
+/// It acknowledges the write well before `powerstate` reflects it.
+const POWER_SETTLE: Duration = Duration::from_secs(6);
+const POWER_POLL_GAP: Duration = Duration::from_millis(900);
 /// DIAL on the Android box. Waking the box makes it assert CEC One Touch Play,
 /// which powers the TV on *and* switches it to the box's HDMI input.
 const BOX_DIAL_PORT: u16 = 8008;
@@ -510,6 +514,18 @@ impl TvManager {
 
         self.post(Endpoint::PowerState, json!({ "powerstate": "On" }))
             .await?;
+
+        // The set lags its own writes: reading `powerstate` straight back
+        // reports the previous value, so an successful power-on looked like it
+        // had left the TV in standby. Give it a moment to catch up rather than
+        // reporting a state we know to be stale.
+        let deadline = Instant::now() + POWER_SETTLE;
+        while Instant::now() < deadline {
+            if self.power().await == TvPower::On {
+                break;
+            }
+            tokio::time::sleep(POWER_POLL_GAP).await;
+        }
 
         if switch_to_box {
             // Best-effort: the set is on either way, and the box may simply
