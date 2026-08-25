@@ -28,7 +28,7 @@ use rsa::{
     pkcs8::{DecodePrivateKey, EncodePrivateKey},
     signature::{hazmat::PrehashSigner, SignatureEncoding},
     traits::PublicKeyParts,
-    BigUint, RsaPrivateKey, RsaPublicKey,
+    BoxedUint, RsaPrivateKey, RsaPublicKey,
 };
 use sha1::Sha1;
 use tokio::{
@@ -154,7 +154,7 @@ async fn read_message_within(
 /// Generates a fresh 2048-bit key. Slow on an ARMv6 Pi (tens of seconds), so
 /// callers must run this off the async runtime and persist the result.
 pub fn generate_key() -> Result<RsaPrivateKey, AppError> {
-    RsaPrivateKey::new(&mut rand::thread_rng(), RSA_BITS)
+    RsaPrivateKey::new(&mut rand::rng(), RSA_BITS)
         .map_err(|error| protocol_error(format!("could not generate an ADB key: {error}")))
 }
 
@@ -180,10 +180,15 @@ pub fn android_public_key(key: &RsaPrivateKey, comment: &str) -> String {
     let public = RsaPublicKey::from(key);
     let modulus = public.n();
 
-    // The blob stores little-endian 32-bit words, which is exactly how the
-    // modulus serializes byte-wise, so go through bytes and repack.
-    let to_words = |value: &BigUint| {
-        let bytes = value.to_bytes_le();
+    // rr = R^2 mod n, with R = 2^RSA_BITS — one of the two values the device's
+    // Montgomery reduction wants precomputed. The precision has to hold
+    // 2^(2*RSA_BITS) before the reduction brings it back down.
+    let rr = BoxedUint::one_with_precision(RSA_BITS as u32 * 2 + 1)
+        .shl(RSA_BITS as u32 * 2)
+        .rem_vartime(modulus);
+
+    // The blob is little-endian 32-bit words, which is what these repack into.
+    let to_words = |bytes: &[u8]| {
         let mut words = vec![0u32; KEY_WORDS];
         for (index, chunk) in bytes.chunks(4).take(KEY_WORDS).enumerate() {
             let mut word = [0u8; 4];
@@ -193,10 +198,14 @@ pub fn android_public_key(key: &RsaPrivateKey, comment: &str) -> String {
         words
     };
 
-    let modulus_words = to_words(modulus);
+    let modulus_words = to_words(&modulus.as_ref().to_le_bytes());
+    let rr_words = to_words(&rr.to_le_bytes());
 
-    // n0inv = -(n^-1) mod 2^32. Newton's iteration doubles the number of
-    // correct bits each round, so five rounds cover all 32.
+    // n0inv = -(n^-1) mod 2^32, the other precomputed value. Computed here
+    // rather than taken from crypto-bigint's `mod_neg_inv`, which is sized to
+    // the platform's limb (64-bit on this laptop, 32-bit on the Pi) while the
+    // blob always wants 32. Newton's iteration doubles the correct bits each
+    // round, so five rounds cover all 32.
     let n0 = modulus_words[0];
     let mut inverse = 1u32;
     for _ in 0..5 {
@@ -204,17 +213,13 @@ pub fn android_public_key(key: &RsaPrivateKey, comment: &str) -> String {
     }
     let n0inv = inverse.wrapping_neg();
 
-    // rr = R^2 mod n, with R = 2^2048.
-    let rr = BigUint::from(1u32) << (RSA_BITS * 2);
-    let rr = rr % modulus;
-
     let mut blob = Vec::with_capacity(4 + 4 + KEY_WORDS * 8 + 4);
     blob.extend_from_slice(&(KEY_WORDS as u32).to_le_bytes());
     blob.extend_from_slice(&n0inv.to_le_bytes());
     for word in modulus_words {
         blob.extend_from_slice(&word.to_le_bytes());
     }
-    for word in to_words(&rr) {
+    for word in rr_words {
         blob.extend_from_slice(&word.to_le_bytes());
     }
     blob.extend_from_slice(&65537u32.to_le_bytes());
@@ -506,9 +511,7 @@ mod tests {
     fn android_public_key_blob_has_the_expected_shape() {
         use base64::Engine as _;
 
-        // A small key keeps the test fast; the encoding is size-driven, and
-        // the blob is padded to 2048 bits either way.
-        let key = RsaPrivateKey::new(&mut rand::thread_rng(), 512).expect("key");
+        let key = RsaPrivateKey::new(&mut rand::rng(), RSA_BITS).expect("key");
         let encoded = android_public_key(&key, "maison@test");
         let (blob, comment) = encoded.split_once(' ').expect("comment is space-separated");
         assert_eq!(comment, "maison@test");
@@ -527,7 +530,7 @@ mod tests {
     fn n0inv_satisfies_its_montgomery_identity() {
         use base64::Engine as _;
 
-        let key = RsaPrivateKey::new(&mut rand::thread_rng(), 512).expect("key");
+        let key = RsaPrivateKey::new(&mut rand::rng(), RSA_BITS).expect("key");
         let encoded = android_public_key(&key, "c");
         let blob = base64::engine::general_purpose::STANDARD
             .decode(encoded.split_once(' ').expect("comment").0)
@@ -595,7 +598,7 @@ mod tests {
 
     #[test]
     fn keys_round_trip_through_pkcs8() {
-        let key = RsaPrivateKey::new(&mut rand::thread_rng(), 512).expect("key");
+        let key = RsaPrivateKey::new(&mut rand::rng(), RSA_BITS).expect("key");
         let der = encode_key(&key).expect("encode");
         assert_eq!(decode_key(&der).expect("decode"), key);
     }

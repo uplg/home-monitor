@@ -678,6 +678,14 @@
     "firstRunHint": "Au premier lancement, une clé est générée et une autorisation est demandée sur l'écran de la TV.",
     "installApk": "Installer un APK",
     "installing": "Installation…",
-    "apkInstalled": "APK installé"
+    "apkInstalled": "APK installé",
+    "pair": "Pairer (touches rapides)",
+    "pairing": "Pairage…",
+    "pairCode": "Code affiché sur la TV",
+    "pairConfirm": "Valider",
+    "paired": "Pairé",
+    "pairHint": "Le pairage active le protocole Remote v2 : les touches ne passent plus par ADB et deviennent quasi instantanées.",
+    "pairStarted": "Saisis les six caractères affichés sur la TV",
+    "pairedOk": "Pairé — les touches passent par le canal rapide"
   }
 }

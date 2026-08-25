@@ -57,6 +57,7 @@ fn test_config(keymap_path: std::path::PathBuf) -> Config {
         tv_config_path: temp_root.join("tv.json"),
         androidtv_config_path: temp_root.join("androidtv.json"),
         adb_key_path: temp_root.join("adb-key"),
+        atv_identity_path: temp_root.join("atv-identity"),
         ir_api_token: Some(TEST_TOKEN.to_string()),
         source_root,
     }

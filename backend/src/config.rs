@@ -30,6 +30,7 @@ pub struct Config {
     pub tv_config_path: PathBuf,
     pub androidtv_config_path: PathBuf,
     pub adb_key_path: PathBuf,
+    pub atv_identity_path: PathBuf,
     pub ir_api_token: Option<String>,
 }
 
@@ -107,6 +108,12 @@ impl Config {
         let adb_key_path = env::var("ADB_KEY_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| source_root.join("adb-key"));
+
+        // TLS client identity for the Android TV Remote v2 protocol. Distinct
+        // from the ADB key: the TV pairs against this certificate.
+        let atv_identity_path = env::var("ATV_IDENTITY_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| source_root.join("atv-identity"));
 
         // Machine token for the STB IR bridge (kird); empty/unset = IR API off.
         let ir_api_token = env::var("IR_API_TOKEN").ok().and_then(|value| {
@@ -199,6 +206,7 @@ impl Config {
             tv_config_path,
             androidtv_config_path,
             adb_key_path,
+            atv_identity_path,
             ir_api_token,
         }
     }
@@ -233,6 +241,7 @@ impl Config {
             tv_config_path: source_root.join("tv.json"),
             androidtv_config_path: source_root.join("androidtv.json"),
             adb_key_path: source_root.join("adb-key"),
+            atv_identity_path: source_root.join("atv-identity"),
             ir_api_token: Some("test-ir-token".to_string()),
             source_root,
         }

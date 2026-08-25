@@ -19,6 +19,7 @@ import { tvApi, type TvConfig, type TvKey, type TvStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -57,6 +58,11 @@ export function TvControl() {
   useEffect(() => {
     setVolumeDraft(null);
   }, [status?.volume?.current]);
+
+  // Distinguish "not loaded yet" from "not configured": the status call is
+  // deliberately slow (the TV's request gate spaces every read by 900ms), and
+  // treating undefined as unconfigured flashed the setup form on every load.
+  const isLoading = statusQuery.isPending;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["tv-status"] });
 
@@ -142,7 +148,7 @@ export function TvControl() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {status?.configured ? (
+          {!isLoading && status?.configured ? (
             <Badge variant={isOn ? "default" : "secondary"}>{powerLabel}</Badge>
           ) : null}
           <Button
@@ -157,7 +163,14 @@ export function TvControl() {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {showConfig || !status?.configured ? (
+        {isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-9 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+          </div>
+        ) : null}
+
+        {!isLoading && (showConfig || !status?.configured) ? (
           <div className="space-y-3 rounded-2xl border border-border/60 bg-background/40 p-3">
             {!status?.configured ? (
               <p className="text-sm text-muted-foreground">{t("tv.configureHint")}</p>

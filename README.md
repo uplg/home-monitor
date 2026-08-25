@@ -88,6 +88,34 @@ delay the official `adb` binary shows, so it is the box, not this code.
 
 ## Android TV box
 
+Two channels reach the box, and which one carries a key matters.
+
+**Remote v2** (`atvremote.rs`) is the protocol Google's own remote app speaks:
+mutual TLS on port 6466, protobuf messages, one long-lived session. It is what
+the fast path is built on, and the reason is measurable — sending a key over
+ADB costs ~150 ms, of which only 65 ms is ADB itself; the rest is `input`
+booting a JVM on *every single press*. Remote v2 has no such cost, and because
+the session is owned by a background task the call returns to the HTTP handler
+in microseconds instead of blocking it.
+
+It needs pairing, once per host: the dashboard's "Pair" button opens a session,
+the TV shows six hex digits, and typing them back proves the screen was read
+(the client checks the code's first byte against its own hash before bothering
+the TV, so a typo fails locally). The TLS client certificate must be RSA — the
+pairing secret hashes both certificates' moduli — so the key comes from the
+`rsa` crate and rcgen only wraps it. The identity lives in `atv-identity`
+(0600) and is per host: pairing the Pi does not pair your laptop.
+
+Keys and app launches prefer Remote v2 and fall back to ADB when unpaired,
+because a slower remote beats no remote. App launching goes through
+`RemoteAppLinkLaunchRequest` — the mechanism behind the Netflix and Prime
+buttons on a physical remote.
+
+**ADB** keeps everything with no equivalent in Remote v2: CEC (hence the TV's
+input), detailed box state, and sideloading an APK.
+
+## Android TV box (ADB details)
+
 The box runs plain Android 14 with network debugging enabled, so Maison talks
 to it over **ADB, implemented natively in `adb.rs`** — no `adb` binary is
 shipped to the Pi. The existing Rust crates all drive the local `adb` *server*

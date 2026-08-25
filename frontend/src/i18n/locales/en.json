@@ -678,6 +678,14 @@
     "firstRunHint": "First run generates a key and asks for authorisation on the TV screen.",
     "installApk": "Install APK",
     "installing": "Installing…",
-    "apkInstalled": "APK installed"
+    "apkInstalled": "APK installed",
+    "pair": "Pair for fast keys",
+    "pairing": "Pairing…",
+    "pairCode": "Code shown on the TV",
+    "pairConfirm": "Confirm",
+    "paired": "Paired",
+    "pairHint": "Pairing uses the Remote v2 protocol: keys stop going through ADB and become near-instant.",
+    "pairStarted": "Enter the six characters shown on the TV",
+    "pairedOk": "Paired — keys are now on the fast channel"
   }
 }

@@ -31,6 +31,12 @@ struct ConfigRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct PairFinishRequest {
+    code: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct KeyRequest {
     key: AndroidKey,
 }
@@ -74,6 +80,8 @@ pub fn router() -> Router<AppState> {
         .route("/key", post(send_key))
         .route("/launch", post(launch))
         .route("/apps", get(apps))
+        .route("/pair/start", post(pair_start))
+        .route("/pair/finish", post(pair_finish))
         .route("/wake", post(wake))
         .route("/sleep", post(sleep))
         .route(
@@ -224,5 +232,32 @@ async fn install_apk(
     Ok(Json(SimpleResponse {
         success: true,
         message,
+    }))
+}
+
+/// Opens a pairing session. The TV shows a six hex-digit code once this
+/// returns; the caller then posts it to `/pair/finish`.
+async fn pair_start(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+) -> Result<Json<SimpleResponse>, AppError> {
+    let _ = user.0;
+    state.androidtv.start_pairing().await?;
+    Ok(Json(SimpleResponse {
+        success: true,
+        message: "Enter the code shown on the TV".to_string(),
+    }))
+}
+
+async fn pair_finish(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(body): Json<PairFinishRequest>,
+) -> Result<Json<SimpleResponse>, AppError> {
+    let _ = user.0;
+    state.androidtv.finish_pairing(&body.code).await?;
+    Ok(Json(SimpleResponse {
+        success: true,
+        message: "Paired — keys now go over the fast channel".to_string(),
     }))
 }

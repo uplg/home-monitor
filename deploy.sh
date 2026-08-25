@@ -32,6 +32,7 @@ MUTABLE_RUNTIME_FILES=(
   tv.json
   androidtv.json
   adb-key
+  atv-identity
 )
 
 usage() {
@@ -161,7 +162,8 @@ chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/cache" 2>/dev/null || tr
 for state_file in \
   device-cache.json broadlink-codes.json hue-lamps.json hue-lamps-blacklist.json \
   zigbee-lamps.json zigbee-lamps-blacklist.json climate-state.json nabaztag.json \
-  refresh-tokens.json ir-keymap.json tv.json androidtv.json adb-key
+  refresh-tokens.json ir-keymap.json tv.json androidtv.json adb-key \
+  atv-identity
 do
   [ -e "${APP_DIR}/${state_file}" ] || touch "${APP_DIR}/${state_file}"
   chown "${SERVICE_USER}:${SERVICE_GROUP}" "${APP_DIR}/${state_file}"

@@ -37,9 +37,18 @@ rbroadlink = "0.4.2"
 # ADB (Android TV box): the device authenticates the client by having it sign
 # a 20-byte token with RSA-2048, so a pure-Rust RSA is needed to speak the
 # protocol without shipping the adb binary to the Pi.
-rsa = "0.9.10"
-sha1 = { version = "0.10.6", features = ["oid"] }
-rand = "0.8.5"
+# Android TV Remote v2: mutual TLS with a self-signed client certificate we
+# generate ourselves, and the pairing secret is a SHA-256 over both public
+# keys — hence rcgen to mint the cert and x509-parser to read the TV's.
+# rustls/tokio-rustls are already in the tree via reqwest.
+rcgen = "0.14.9"
+rustls = "0.23.43"
+tokio-rustls = "0.26.4"
+x509-parser = "0.18.1"
+sha2 = "0.11.0"
+rsa = "0.10.0-rc.18"
+sha1 = { version = "0.11.0", features = ["oid"] }
+rand = "0.10.2"
 rust-async-tuyapi = { git = "https://github.com/uplg/rust-async-tuyapi", rev = "6cd9180b296a04ef9e6751b594c6235aa79b7157" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

@@ -1201,6 +1201,8 @@ export interface AndroidTvStatus {
   awake: boolean;
   currentApp?: string;
   model?: string;
+  /** True once paired over Remote v2, which is what makes keys fast. */
+  paired: boolean;
 }
 
 export interface AndroidTvStatusResponse {
@@ -1239,6 +1241,14 @@ export const androidTvApi = {
   wake: () => api<AndroidTvSimpleResponse>("/androidtv/wake", { method: "POST" }),
 
   sleep: () => api<AndroidTvSimpleResponse>("/androidtv/sleep", { method: "POST" }),
+
+  pairStart: () => api<AndroidTvSimpleResponse>("/androidtv/pair/start", { method: "POST" }),
+
+  pairFinish: (code: string) =>
+    api<AndroidTvSimpleResponse>("/androidtv/pair/finish", {
+      method: "POST",
+      body: { code },
+    }),
 
   /**
    * Sideloads an APK onto the box. Goes through `fetch` directly rather than

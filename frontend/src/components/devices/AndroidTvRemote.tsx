@@ -22,6 +22,7 @@ import {
   Volume1,
   Volume2,
   VolumeX,
+  Zap,
 } from "lucide-react";
 import {
   androidTvApi,
@@ -32,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
@@ -54,6 +56,9 @@ export function AndroidTvRemote() {
   const queryClient = useQueryClient();
   const [showConfig, setShowConfig] = useState(false);
   const [draft, setDraft] = useState<AndroidTvConfig>({});
+  // Pairing spans two calls with a human reading a code in between.
+  const [pairCode, setPairCode] = useState("");
+  const [pairingOpen, setPairingOpen] = useState(false);
 
   const statusQuery = useQuery({
     queryKey: ["androidtv-status"],
@@ -68,6 +73,11 @@ export function AndroidTvRemote() {
   useEffect(() => {
     if (config) setDraft(config);
   }, [config]);
+
+  // Distinguish "not loaded yet" from "not configured": the status call is
+  // deliberately slow (the TV's request gate spaces every read by 900ms), and
+  // treating undefined as unconfigured flashed the setup form on every load.
+  const isLoading = statusQuery.isPending;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["androidtv-status"] });
   const fail = (error: unknown) => {
@@ -104,6 +114,27 @@ export function AndroidTvRemote() {
     onSuccess: (response) => {
       invalidate();
       toast({ title: t("androidTv.apkInstalled"), description: response.message });
+    },
+    onError: fail,
+  });
+
+  const pairStartMutation = useMutation({
+    mutationFn: () => androidTvApi.pairStart(),
+    onSuccess: () => {
+      setPairingOpen(true);
+      toast({ title: t("androidTv.pairStarted") });
+    },
+    onError: fail,
+  });
+
+  const pairFinishMutation = useMutation({
+    mutationFn: (code: string) => androidTvApi.pairFinish(code),
+    onSuccess: () => {
+      invalidate();
+      setPairingOpen(false);
+      setPairCode("");
+      haptic(CONFIRM);
+      toast({ title: t("androidTv.pairedOk") });
     },
     onError: fail,
   });
@@ -179,7 +210,7 @@ export function AndroidTvRemote() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {status?.configured ? (
+          {!isLoading && status?.configured ? (
             <Badge variant={reachable ? "default" : "secondary"}>
               {!reachable
                 ? t("androidTv.unreachable")
@@ -200,7 +231,14 @@ export function AndroidTvRemote() {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {showConfig || !status?.configured ? (
+        {isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-9 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-2xl" />
+          </div>
+        ) : null}
+
+        {!isLoading && (showConfig || !status?.configured) ? (
           <div className="space-y-3 rounded-2xl border border-border/60 bg-background/40 p-3">
             {!status?.configured ? (
               <p className="text-sm text-muted-foreground">{t("androidTv.configureHint")}</p>
@@ -215,6 +253,52 @@ export function AndroidTvRemote() {
               />
             </div>
             <p className="text-xs text-muted-foreground">{t("androidTv.firstRunHint")}</p>
+
+            {/* Remote v2 pairing: optional, but it is what makes keys fast. */}
+            {status?.configured && !status.paired ? (
+              <div className="space-y-2 rounded-xl border border-border/60 bg-card/40 p-3">
+                <p className="text-xs text-muted-foreground">{t("androidTv.pairHint")}</p>
+                {pairingOpen ? (
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="atv-pair">{t("androidTv.pairCode")}</Label>
+                      <Input
+                        id="atv-pair"
+                        value={pairCode}
+                        onChange={(event) => setPairCode(event.target.value)}
+                        placeholder="A1B2C3"
+                        maxLength={6}
+                        className="w-32 font-mono uppercase tracking-widest"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => pairFinishMutation.mutate(pairCode)}
+                      disabled={pairCode.length !== 6 || pairFinishMutation.isPending}
+                    >
+                      {pairFinishMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      {t("androidTv.pairConfirm")}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => pairStartMutation.mutate()}
+                    disabled={pairStartMutation.isPending}
+                  >
+                    {pairStartMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Zap className="mr-2 h-4 w-4" />
+                    )}
+                    {pairStartMutation.isPending ? t("androidTv.pairing") : t("androidTv.pair")}
+                  </Button>
+                )}
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"

@@ -142,6 +142,7 @@ fn test_config() -> Config {
         tv_config_path: source_root.join("tv.json"),
         androidtv_config_path: source_root.join("androidtv.json"),
         adb_key_path: source_root.join("adb-key"),
+        atv_identity_path: source_root.join("atv-identity"),
         ir_api_token: Some("test-ir-token".to_string()),
         source_root,
     }

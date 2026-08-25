@@ -30,6 +30,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::{
     adb::{self, AdbDevice},
+    atvremote::{Identity, Pairing, Session},
     error::AppError,
 };
 
@@ -68,6 +69,38 @@ pub enum AndroidKey {
 }
 
 impl AndroidKey {
+    /// Numeric Android keycode, which is what the Remote v2 protocol carries
+    /// (ADB takes the symbolic name instead — same key, two spellings).
+    fn android_keycode(self) -> i64 {
+        match self {
+            Self::Home => 3,
+            Self::Back => 4,
+            Self::Up => 19,
+            Self::Down => 20,
+            Self::Left => 21,
+            Self::Right => 22,
+            Self::Ok => 23,
+            Self::VolumeUp => 24,
+            Self::VolumeDown => 25,
+            Self::Power => 26,
+            Self::Menu => 82,
+            Self::Search => 84,
+            Self::PlayPause => 85,
+            Self::Stop => 86,
+            Self::Next => 87,
+            Self::Previous => 88,
+            Self::Rewind => 89,
+            Self::FastForward => 90,
+            Self::Play => 126,
+            Self::Pause => 127,
+            Self::Mute => 164,
+            Self::ChannelUp => 166,
+            Self::ChannelDown => 167,
+            Self::Sleep => 223,
+            Self::Wakeup => 224,
+        }
+    }
+
     fn keycode(self) -> &'static str {
         match self {
             Self::Up => "KEYCODE_DPAD_UP",
@@ -130,21 +163,35 @@ pub struct AndroidTvStatus {
     pub current_app: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// True once a Remote v2 session is available, which is what makes keys
+    /// fast. Unpaired is a normal state, not a fault: ADB still works.
+    pub paired: bool,
 }
 
 #[derive(Clone)]
 pub struct AndroidTvManager {
     config_path: PathBuf,
     key_path: PathBuf,
+    identity_path: PathBuf,
     config: Arc<RwLock<AndroidTvConfig>>,
     key: Arc<Mutex<Option<RsaPrivateKey>>>,
     /// Reused across calls; also serializes them, which suits a remote
     /// control and keeps a single ADB stream open at a time.
     device: Arc<Mutex<Option<AdbDevice>>>,
+    /// Remote v2 session, preferred for keys and app launches: ~20 ms against
+    /// ADB's ~150 ms, nearly all of which is `input` booting a JVM per press.
+    remote: Arc<Mutex<Option<Session>>>,
+    /// A pairing in flight. It spans two HTTP requests — the TV shows a code
+    /// between them — so the open TLS session has to be held here.
+    pending_pairing: Arc<Mutex<Option<Pairing>>>,
 }
 
 impl AndroidTvManager {
-    pub fn new(config_path: &Path, key_path: &Path) -> Result<Self, AppError> {
+    pub fn new(
+        config_path: &Path,
+        key_path: &Path,
+        identity_path: &Path,
+    ) -> Result<Self, AppError> {
         let config = match std::fs::read_to_string(config_path) {
             Ok(content) if !content.trim().is_empty() => {
                 serde_json::from_str(&content).map_err(|error| {
@@ -163,9 +210,12 @@ impl AndroidTvManager {
         Ok(Self {
             config_path: config_path.to_path_buf(),
             key_path: key_path.to_path_buf(),
+            identity_path: identity_path.to_path_buf(),
             config: Arc::new(RwLock::new(config)),
             key: Arc::new(Mutex::new(None)),
             device: Arc::new(Mutex::new(None)),
+            remote: Arc::new(Mutex::new(None)),
+            pending_pairing: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -252,10 +302,95 @@ impl AndroidTvManager {
         Ok(output)
     }
 
+    /// Sends a key, over Remote v2 when the box is paired.
+    ///
+    /// The fallback matters: Remote v2 is unavailable until someone has paired
+    /// the host, and ADB keeps working meanwhile — a slower remote beats no
+    /// remote.
     pub async fn send_key(&self, key: AndroidKey) -> Result<(), AppError> {
+        if let Some(session) = self.remote_session().await {
+            match session.key(key.android_keycode()).await {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    tracing::debug!(%error, "remote session failed, falling back to ADB");
+                    *self.remote.lock().await = None;
+                }
+            }
+        }
         self.shell(&format!("input keyevent {}", key.keycode()))
             .await
             .map(|_| ())
+    }
+
+    /// Sends a key over ADB, bypassing the Remote v2 preference. Exists so
+    /// the live benchmark can compare the two channels directly.
+    pub async fn adb_key_for_benchmark(&self, key: AndroidKey) -> Result<(), AppError> {
+        self.shell(&format!("input keyevent {}", key.keycode()))
+            .await
+            .map(|_| ())
+    }
+
+    /// The live Remote v2 session, reconnecting if it dropped. Returns `None`
+    /// when the host is not paired, which is not an error — it is the state
+    /// every host starts in.
+    async fn remote_session(&self) -> Option<Session> {
+        let mut slot = self.remote.lock().await;
+        if let Some(session) = slot.as_ref() {
+            if session.is_open() {
+                return Some(session.clone());
+            }
+        }
+
+        let host = self.config.read().await.host.clone()?;
+        let identity = self.identity().await.ok()?;
+        match Session::connect(&host, &identity).await {
+            Ok(session) => {
+                *slot = Some(session.clone());
+                Some(session)
+            }
+            Err(error) => {
+                tracing::debug!(%error, "no Remote v2 session (not paired?)");
+                None
+            }
+        }
+    }
+
+    async fn identity(&self) -> Result<Identity, AppError> {
+        let path = self.identity_path.clone();
+        tokio::task::spawn_blocking(move || Identity::load_or_create(&path)).await?
+    }
+
+    /// Opens a pairing session; the TV shows a six hex-digit code afterwards.
+    pub async fn start_pairing(&self) -> Result<(), AppError> {
+        let host = self
+            .config
+            .read()
+            .await
+            .host
+            .clone()
+            .ok_or_else(|| AppError::service_unavailable("No Android TV box configured"))?;
+        let identity = self.identity().await?;
+        let pairing = Pairing::start(&host, &identity).await?;
+        *self.pending_pairing.lock().await = Some(pairing);
+        Ok(())
+    }
+
+    /// Completes pairing with the code from the screen.
+    pub async fn finish_pairing(&self, code: &str) -> Result<(), AppError> {
+        let pairing = self.pending_pairing.lock().await.take().ok_or_else(|| {
+            AppError::http(
+                axum::http::StatusCode::CONFLICT,
+                "no pairing in progress — start one first",
+            )
+        })?;
+        pairing.finish(code).await?;
+        // Force the next key onto the freshly paired session.
+        *self.remote.lock().await = None;
+        Ok(())
+    }
+
+    pub async fn is_paired(&self) -> bool {
+        self.remote_session().await.is_some()
     }
 
     pub async fn status(&self) -> AndroidTvStatus {
@@ -267,6 +402,7 @@ impl AndroidTvManager {
                 awake: false,
                 current_app: None,
                 model: None,
+                paired: false,
             };
         }
 
@@ -286,6 +422,7 @@ impl AndroidTvManager {
                     awake,
                     current_app: parse_resumed_package(&output),
                     model: model.filter(|value| !value.is_empty()),
+                    paired: self.remote.lock().await.is_some(),
                 }
             }
             Err(_) => AndroidTvStatus {
@@ -294,12 +431,22 @@ impl AndroidTvManager {
                 awake: false,
                 current_app: None,
                 model: None,
+                paired: false,
             },
         }
     }
 
     pub async fn launch_app(&self, package: &str) -> Result<(), AppError> {
         validate_package(package)?;
+        if let Some(session) = self.remote_session().await {
+            match session.launch(package).await {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    tracing::debug!(%error, "remote launch failed, falling back to ADB");
+                    *self.remote.lock().await = None;
+                }
+            }
+        }
         self.shell(&format!(
             "monkey -p {package} -c android.intent.category.LAUNCHER 1"
         ))
@@ -427,6 +574,28 @@ fn parse_resumed_package(output: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// The two channels spell the same key differently — a name for ADB, a
+    /// number for Remote v2 — so they are asserted against each other. A
+    /// mismatch would make a button behave differently depending on whether
+    /// the box happens to be paired, which is the worst kind of bug to chase.
+    #[test]
+    fn keycode_spellings_agree() {
+        let pairs = [
+            (AndroidKey::Home, "KEYCODE_HOME", 3),
+            (AndroidKey::Back, "KEYCODE_BACK", 4),
+            (AndroidKey::Up, "KEYCODE_DPAD_UP", 19),
+            (AndroidKey::Ok, "KEYCODE_DPAD_CENTER", 23),
+            (AndroidKey::VolumeUp, "KEYCODE_VOLUME_UP", 24),
+            (AndroidKey::PlayPause, "KEYCODE_MEDIA_PLAY_PAUSE", 85),
+            (AndroidKey::Mute, "KEYCODE_VOLUME_MUTE", 164),
+            (AndroidKey::Wakeup, "KEYCODE_WAKEUP", 224),
+        ];
+        for (key, name, code) in pairs {
+            assert_eq!(key.keycode(), name, "{key:?} name");
+            assert_eq!(key.android_keycode(), code, "{key:?} number");
+        }
+    }
+
     #[test]
     fn keycodes_match_android_names() {
         assert_eq!(AndroidKey::Ok.keycode(), "KEYCODE_DPAD_CENTER");
@@ -475,6 +644,7 @@ mod tests {
         let manager = AndroidTvManager::new(
             &dir.path().join("androidtv.json"),
             &dir.path().join("adb-key"),
+            &dir.path().join("atv-identity"),
         )
         .expect("manager");
         assert!(manager.config().await.host.is_none());
@@ -487,7 +657,8 @@ mod tests {
     async fn set_config_persists_and_rejects_bad_packages() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("androidtv.json");
-        let manager = AndroidTvManager::new(&path, &dir.path().join("adb-key")).expect("manager");
+        let manager = AndroidTvManager::new(&path, &dir.path().join("adb-key"), &dir.path().join("atv-identity"))
+            .expect("manager");
 
         manager
             .set_config(AndroidTvConfig {
@@ -501,8 +672,12 @@ mod tests {
             .await
             .expect("saved");
 
-        let reloaded = AndroidTvManager::new(&path, &dir.path().join("adb-key"))
-            .expect("reload")
+        let reloaded = AndroidTvManager::new(
+            &path,
+            &dir.path().join("adb-key"),
+            &dir.path().join("atv-identity"),
+        )
+        .expect("reload")
             .config()
             .await;
         assert_eq!(reloaded.host.as_deref(), Some("192.168.1.153"));

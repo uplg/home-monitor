@@ -1,5 +1,6 @@
 pub mod adb;
 pub mod androidtv;
+pub mod atvremote;
 pub mod auth;
 pub mod broadlink;
 pub mod config;
@@ -96,7 +97,11 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
     let tuya = TuyaManager::new(&config.devices_path, &config.device_cache_path)?;
     let tv = TvManager::new(&config.tv_config_path)?;
     let androidtv =
-        AndroidTvManager::new(&config.androidtv_config_path, &config.adb_key_path)?;
+        AndroidTvManager::new(
+        &config.androidtv_config_path,
+        &config.adb_key_path,
+        &config.atv_identity_path,
+    )?;
     let zigbee = ZigbeeManager::new(config.as_ref())?;
 
     let state = AppState {
