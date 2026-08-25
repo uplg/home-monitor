@@ -14,7 +14,7 @@
 - Drive the Android TV box (MECOOL LEAP-S1) from a proper on-screen remote — D-pad, media, volume, app shortcuts and APK sideloading — over a native ADB client. See "Android TV box" below.
 - Keep access private with local authentication and secure session cookies.
 
-![Maison](/screenshots/maison.jpg?v=1786751396)
+![Maison](/screenshots/maison.jpg?v=1787691685)
 
 Exposes only two app components:
 
