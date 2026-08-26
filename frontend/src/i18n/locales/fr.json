@@ -650,12 +650,12 @@
     "ambilightOff": "Ambilight éteint",
     "remote": "Télécommande",
     "host": "Adresse de la TV",
-    "mac": "Adresse MAC (Wake-on-LAN)",
+    "irBlasterHost": "Émetteur infrarouge",
     "boxHost": "Adresse du boîtier Android",
     "save": "Enregistrer",
     "saved": "Configuration TV enregistrée",
     "configure": "Configurer",
-    "deepStandbyHint": "L'allumage la réveille d'abord par le réseau ; compte ~20 s."
+    "deepStandbyHint": "L'allumage passe par l'infrarouge, seul canal qui la réveille en veille prolongée."
   },
   "androidTv": {
     "title": "Android TV",

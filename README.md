@@ -10,7 +10,7 @@
 - Query Tempo data, predictions, history, and calibration helpers.
 - Mirror the daily Tempo colors on a Nabaztag running the garenne firmware (belly LED = today, ears = tomorrow).
 - Turn a set-top-box remote control into a house remote: an AirTies AIR 7310T (custom firmware) decodes its Ruwido IR remote and forwards every key press to maison, which maps buttons to actions. See "IR remote" below.
-- Drive the living-room Philips TV (55PUS6753, Saphi) over its JointSPACE API: power, volume, Ambilight and remote keys, plus Wake-on-LAN for deep standby. See "Television" below.
+- Drive the living-room Philips TV (55PUS6753, Saphi) over its JointSPACE API: volume, Ambilight and remote keys, with power going over infrared — the one channel that reaches the set in deep standby. See "Television" below.
 - Drive the Android TV box (MECOOL LEAP-S1) from a proper on-screen remote — D-pad, media, volume, app shortcuts and APK sideloading — over two native clients: the Remote v2 protocol a physical remote speaks (fast, needs pairing) with ADB as the fallback and for what Remote v2 cannot do. See "Android TV box" below.
 - Keep access private with local authentication and secure session cookies.
 
@@ -50,8 +50,8 @@ Tempo recalibration workflow is documented in `docs/tempo-calibration.md`.
 The 55PUS6753 runs Saphi, not Android TV, which is what makes it controllable
 at all: the JointSPACE API answers plain HTTP on port 1925 with
 `pairing_type: "none"` — no pairing, no auth, no certificate. Copy
-`tv.json.template` to `tv.json` and fill in the set's address, its MAC (for
-Wake-on-LAN) and, optionally, the Android box address.
+`tv.json.template` to `tv.json` and fill in the set's address, the address of
+the Broadlink blaster that fronts it and, optionally, the Android box address.
 
 Two things are worth knowing before poking at it:
 
@@ -62,10 +62,18 @@ Two things are worth knowing before poking at it:
   own `Standby` brings it back, only unplugging the set from the mains for
   ~30 s. `tv.rs` therefore models the reachable surface as an enum and spaces
   every request through a single gate. Do not widen it without verifying.
-- **There are two sleep depths.** Light standby still answers on 1925
-  (`powerstate: "Standby"`); deep standby drops the network stack entirely and
-  needs a Wake-on-LAN magic packet first, which takes ~20 s and only revives
-  the network — the panel stays off until the following `powerstate: On`.
+- **Power does not go over the API.** Light standby still answers on 1925
+  (`powerstate: "Standby"`), but deep standby drops the network stack entirely
+  and nothing on the network gets it back: Wake-on-LAN fails despite the SSDP
+  `WAKEUP` header, even as raw layer-2 magic packets that bypass IP routing
+  altogether, and CEC fails too because the set leaves the bus. Infrared is the
+  only channel that survives, its receiver staying powered at every depth — and
+  it is also the only one that still works once the JointSPACE server has
+  crashed. So `power_on` and `power_off` both fire a Philips RC5 code through
+  the blaster, discrete rather than a toggle (`0x3F` on, `0x3D` off, address
+  `0x00`), which makes them safe to send without reading the current state
+  back. See `philips_ir.rs`; `cargo run --bin send_ir` fires a raw packet by
+  hand.
 
 Source switching is the one thing JointSPACE cannot do on Saphi. Powering on
 with `switchToBox` instead nudges the Android box awake over DIAL, which makes

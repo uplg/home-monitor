@@ -186,12 +186,14 @@ export function TvControl() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="tv-mac">{t("tv.mac")}</Label>
+                <Label htmlFor="tv-ir-blaster">{t("tv.irBlasterHost")}</Label>
                 <Input
-                  id="tv-mac"
-                  value={draft.mac ?? ""}
-                  placeholder="2c:d9:74:c2:d4:57"
-                  onChange={(event) => setDraft({ ...draft, mac: event.target.value })}
+                  id="tv-ir-blaster"
+                  value={draft.irBlasterHost ?? ""}
+                  placeholder="192.168.1.73"
+                  onChange={(event) =>
+                    setDraft({ ...draft, irBlasterHost: event.target.value })
+                  }
                 />
               </div>
               <div className="space-y-1">

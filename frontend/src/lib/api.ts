@@ -1084,7 +1084,7 @@ export type TvKey =
 
 export interface TvConfig {
   host?: string | null;
-  mac?: string | null;
+  irBlasterHost?: string | null;
   boxHost?: string | null;
   boxWakeApp?: string | null;
 }

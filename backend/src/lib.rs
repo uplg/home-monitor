@@ -14,6 +14,7 @@ pub mod ir;
 pub mod meross;
 pub mod mitsubishi_ir;
 pub mod nabaztag;
+pub mod philips_ir;
 pub mod routes;
 pub mod tempo;
 pub mod tuya;
@@ -95,7 +96,7 @@ pub fn build_app_parts_from_config(config: Arc<Config>) -> Result<(Router, AppSt
     )?;
     let tempo = TempoService::new(config.source_root.clone())?;
     let tuya = TuyaManager::new(&config.devices_path, &config.device_cache_path)?;
-    let tv = TvManager::new(&config.tv_config_path)?;
+    let tv = TvManager::new(&config.tv_config_path, broadlink.clone())?;
     let androidtv =
         AndroidTvManager::new(
         &config.androidtv_config_path,

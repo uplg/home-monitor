@@ -25,10 +25,9 @@ struct StatusResponse {
 #[serde(rename_all = "camelCase")]
 struct ConfigRequest {
     host: Option<String>,
-    mac: Option<String>,
+    ir_blaster_host: Option<String>,
     box_host: Option<String>,
     box_wake_app: Option<String>,
-    broadcast: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,10 +169,9 @@ async fn set_config(
         .tv
         .set_config(TvConfig {
             host: blank_to_none(body.host),
-            mac: blank_to_none(body.mac),
+            ir_blaster_host: blank_to_none(body.ir_blaster_host),
             box_host: blank_to_none(body.box_host),
             box_wake_app: blank_to_none(body.box_wake_app),
-            broadcast: blank_to_none(body.broadcast),
         })
         .await?;
     Ok(Json(SimpleResponse {

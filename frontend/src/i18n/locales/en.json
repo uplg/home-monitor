@@ -650,12 +650,12 @@
     "ambilightOff": "Ambilight off",
     "remote": "Remote",
     "host": "TV address",
-    "mac": "MAC address (Wake-on-LAN)",
+    "irBlasterHost": "Infrared blaster",
     "boxHost": "Android box address",
     "save": "Save",
     "saved": "TV configuration saved",
     "configure": "Configure",
-    "deepStandbyHint": "Powering on wakes it over the network first; allow ~20 s."
+    "deepStandbyHint": "Power goes over infrared, the only channel that reaches the set in deep standby."
   },
   "androidTv": {
     "title": "Android TV",
