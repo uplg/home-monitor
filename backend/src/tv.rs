@@ -60,8 +60,16 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(1_500);
 /// Minimum spacing between two calls to the TV. See the module note on the
 /// single-threaded server.
 const MIN_REQUEST_GAP: Duration = Duration::from_millis(900);
-/// Deep standby took ~20 s to answer again in practice; leave generous margin.
-const WAKE_TIMEOUT: Duration = Duration::from_secs(45);
+/// How long a power-on waits for JointSPACE before reporting back.
+///
+/// Deliberately short. The infrared code is discrete, so the set is on whether
+/// or not the API ever answers, and waiting longer refines nothing — it only
+/// leaves the caller staring at a spinner. The set rejoins the network within
+/// about five seconds; its API needs far longer from deep standby and, once
+/// that server has crashed, never comes back at all. Measured against a
+/// crashed server, the previous 45 s budget turned a five-second power-on into
+/// a forty-nine-second round trip.
+const POWER_CONFIRM_BUDGET: Duration = Duration::from_secs(10);
 const WAKE_POLL_GAP: Duration = Duration::from_secs(3);
 /// How long to let the set catch up with a power-on before reporting back.
 /// It acknowledges the write well before `powerstate` reflects it.
@@ -182,8 +190,31 @@ pub enum TvPower {
     On,
     /// Panel off, JointSPACE still answering.
     Standby,
-    /// Network stack down — the API port refuses or times out.
+    /// Network stack down — nothing answers on the API port at all. A
+    /// *refusal* is the opposite signal: the set is up, its server is not.
     DeepStandby,
+}
+
+/// What a TCP connect to the API port reveals about the set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Probe {
+    /// The server accepted the connection.
+    Answering,
+    /// The host answered and refused the port: powered up, JointSPACE down.
+    HostUpApiDown,
+    /// Nothing answered, so the network stack is down and the set is off.
+    Unreachable,
+}
+
+/// Reads a failed connect. Only an outright refusal proves the host is up —
+/// a set in deep standby fails *fast* too, with EHOSTUNREACH once ARP has
+/// given up on it, so "returned an error quickly" is not the same as "is
+/// there".
+fn probe_from_error(kind: std::io::ErrorKind) -> Probe {
+    match kind {
+        std::io::ErrorKind::ConnectionRefused => Probe::HostUpApiDown,
+        _ => Probe::Unreachable,
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -357,25 +388,41 @@ impl TvManager {
 
     /// Is the API port answering? A plain TCP connect, so it costs the HTTP
     /// server nothing and tells light standby from deep standby.
-    async fn api_reachable(&self) -> bool {
+    /// One TCP connect, read for everything it says.
+    ///
+    /// Collapsing this to a bool loses the distinction that matters most on a
+    /// bad day: a refused connection means the set is powered up and only its
+    /// server is gone, which is a very different thing from silence.
+    async fn probe(&self) -> Probe {
         let Ok(host) = self.host().await else {
-            return false;
+            return Probe::Unreachable;
         };
         let Ok(addr) = format!("{host}:{API_PORT}").parse::<SocketAddr>().or_else(|_| {
             host.parse::<IpAddr>()
                 .map(|ip| SocketAddr::new(ip, API_PORT))
         }) else {
-            return false;
+            return Probe::Unreachable;
         };
-        matches!(
-            timeout(PROBE_TIMEOUT, TcpStream::connect(addr)).await,
-            Ok(Ok(_))
-        )
+        match timeout(PROBE_TIMEOUT, TcpStream::connect(addr)).await {
+            Ok(Ok(_)) => Probe::Answering,
+            Ok(Err(error)) => probe_from_error(error.kind()),
+            Err(_) => Probe::Unreachable,
+        }
+    }
+
+    async fn api_reachable(&self) -> bool {
+        matches!(self.probe().await, Probe::Answering)
     }
 
     pub async fn power(&self) -> TvPower {
-        if !self.api_reachable().await {
-            return TvPower::DeepStandby;
+        match self.probe().await {
+            Probe::Unreachable => return TvPower::DeepStandby,
+            // Powered up with JointSPACE gone. Reporting deep standby here is
+            // what left the remote's Power button able to switch the set on
+            // and never off: a toggle reads this state, believes the set is
+            // asleep, and switches it on again.
+            Probe::HostUpApiDown => return TvPower::On,
+            Probe::Answering => {}
         }
         match self.get(Endpoint::PowerState).await {
             Ok(value) => match value.get("powerstate").and_then(|v| v.as_str()) {
@@ -519,11 +566,12 @@ impl TvManager {
         // precondition: a discrete power-on code cannot have left the set
         // anywhere but on, and reporting failure because the API stayed quiet
         // would be reporting on the wrong thing.
-        let reachable = self.await_api(WAKE_TIMEOUT).await;
+        let reachable = self.await_api(POWER_CONFIRM_BUDGET).await;
         if !reachable {
-            tracing::warn!(
-                "TV switched on over infrared, but JointSPACE never answered — \
-                 the embedded server needs a mains power cycle"
+            tracing::info!(
+                "TV switched on over infrared; JointSPACE has not answered yet. \
+                 If it stays silent the embedded server has crashed and needs a \
+                 mains power cycle."
             );
         }
 
@@ -649,6 +697,22 @@ mod tests {
     fn test_broadlink(dir: &tempfile::TempDir) -> BroadlinkManager {
         BroadlinkManager::new(&dir.path().join("codes.json"), &dir.path().join("climate.json"))
             .expect("broadlink")
+    }
+
+    /// A deep-sleeping set fails the connect quickly, not slowly: ARP gives up
+    /// after six probes and the stack answers EHOSTUNREACH. So speed of
+    /// failure says nothing, and only an outright refusal proves the set is
+    /// powered up with its server gone.
+    #[test]
+    fn only_a_refusal_means_the_host_is_up() {
+        use std::io::ErrorKind;
+        assert_eq!(
+            probe_from_error(ErrorKind::ConnectionRefused),
+            Probe::HostUpApiDown
+        );
+        assert_eq!(probe_from_error(ErrorKind::HostUnreachable), Probe::Unreachable);
+        assert_eq!(probe_from_error(ErrorKind::NetworkUnreachable), Probe::Unreachable);
+        assert_eq!(probe_from_error(ErrorKind::TimedOut), Probe::Unreachable);
     }
 
     /// The wire spelling is not derivable from the variant name, so it is
